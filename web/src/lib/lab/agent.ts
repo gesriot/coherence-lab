@@ -123,7 +123,7 @@ export function snapshot(ep: Episode, ablation: Ablation): ViewState {
     cells: agent.cells.map((c) => ({ ...c })),
     grid: agent.grid,
     blobs: agent.blobs.map((b) => ({ ...b })),
-    tracks: agent.tracks.map((t) => ({ ...t })),
+    tracks: agent.tracks.map((t) => ({ ...t, motionSamples: t.motionSamples.map((s) => ({ ...s })) })),
     attention: { ...agent.attention },
     energy: { ...agent.energy },
     energyTrace: [...agent.energyTrace],

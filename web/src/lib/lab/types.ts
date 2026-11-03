@@ -84,6 +84,13 @@ export interface Blob {
   fill: number;
 }
 
+export interface MotionSample {
+  step: number;
+  x: number;
+  y: number;
+  cellWidth: number;
+}
+
 export interface Track {
   id: number;
   x: number;
@@ -105,6 +112,8 @@ export interface Track {
   inWorkspace: boolean;
   radius: number;
   flowError: number;
+  velocitySpread: number;
+  motionSamples: MotionSample[];
 }
 
 export interface AttentionState {

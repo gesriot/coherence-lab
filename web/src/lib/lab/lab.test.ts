@@ -300,3 +300,37 @@ test("scheduled first-order exploration requires the sticky focus to have a curr
   agent.tracks[1]!.boundBlob = null;
   assert.equal(firstOrderDecision(agent).reason, "pursue");
 });
+
+test("one quantized centroid jump survives eighteen missed observations and favors rebinding", () => {
+  function frame(y: number, hidden = false): Observation {
+    const grid = 12;
+    return {
+      grid, gazeX: 50 - 1.5, gazeY: y - 1.5, aperture: 18,
+      cells: Array.from({ length: grid ** 2 }, (_, i) => {
+        if (hidden) return { hue: 0, saturation: 0, lightness: 50 };
+        const spot = i === 6 * grid + 6;
+        return { hue: 20, saturation: spot ? 70 : 0, lightness: spot ? 50 : 6 };
+      }),
+    };
+  }
+  const cfg = defaultConfig();
+  const ep = createAgent(frame(50));
+  for (let i = 0; i < 7; i++) stepAgent(ep, frame(50), cfg);
+  stepAgent(ep, frame(53), cfg);
+  const id = ep.tracks[0]!.id;
+  assert.equal(ep.tracks[0]!.vy, 3 / 8);
+  for (let i = 0; i < 18; i++) stepAgent(ep, frame(50, true), cfg);
+  const prior = ep.tracks[0]!;
+  assert.equal(prior.unseen, 18);
+  assert.ok(Math.abs(prior.y - 50) < 16);
+
+  // With a fixed denominator the innovation would cost more than the 0.5 birth term.
+  const innovation = Math.abs(prior.y + prior.vy - 50);
+  assert.ok(innovation / 16 > 0.5);
+  ep.iterationBudget = 1;
+  stepAgent(ep, frame(50), cfg);
+  assert.equal(ep.tracks.length, 1);
+  assert.equal(ep.tracks[0]!.id, id);
+  assert.equal(ep.tracks[0]!.boundBlob, 0);
+  assert.ok(ep.energy.temporal < 0.5);
+});

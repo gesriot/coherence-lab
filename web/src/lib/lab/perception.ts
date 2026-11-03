@@ -18,6 +18,10 @@ const WORKSPACE = 3;
 const MAX_TRACKS = 5;
 const WIDE = 22;
 const NARROW = 13;
+const MAX_TRACK_SPEED = 3.2;
+const BASE_MATCH_RADIUS = 16;
+// Eight intervals dilute a one-cell centroid jump to one eighth of a cell per step.
+const VELOCITY_INTERVALS = 8;
 
 interface Decision {
   x: number;
@@ -117,6 +121,10 @@ function newTrack(ep: Agent, blob: Blob): Track {
     inWorkspace: false,
     radius: Math.sqrt(blob.area / Math.PI) * (2 * ep.obsGaze.aperture / ep.grid),
     flowError: 0,
+    velocitySpread: MAX_TRACK_SPEED,
+    motionSamples: [{
+      step: 1, x: blob.cx, y: blob.cy, cellWidth: 2 * ep.obsGaze.aperture / ep.grid,
+    }],
   };
   finishTrack(t);
   return t;
@@ -197,23 +205,38 @@ function predictMiss(prior: Track, obs: Observation): Track {
   return t;
 }
 
+function matchRadius(prior: Track): number {
+  return BASE_MATCH_RADIUS + prior.unseen * prior.velocitySpread;
+}
+
 /** Fixed frame priors: a different binding always starts from the same evidence. */
 function matchTrack(ep: Agent, prior: Track, blob: Blob, obs: Observation): Track {
   const dx = blob.cx - prior.x;
   const dy = blob.cy - prior.y;
   const flowError = hypot(dx - prior.vx, dy - prior.vy);
   const hueError = hueDelta(prior.hue + ep.lightEstimate, blob.hue);
-  const mismatch = clamp((flowError / 18 * 1.2 + hueError / 180 * 0.55
-    + Math.abs(prior.fill - blob.fill) * 0.2) / 1.28);
-  const vx = prior.vx * 0.35 + dx * 0.65;
-  const vy = prior.vy * 0.35 + dy * 0.65;
-  const scale = 3.2 / Math.max(3.2, hypot(vx, vy));
+  const relativeFlow = flowError / matchRadius(prior);
+  const mismatch = clamp((relativeFlow * (BASE_MATCH_RADIUS / 18) * 1.2
+    + hueError / 180 * 0.55 + Math.abs(prior.fill - blob.fill) * 0.2) / 1.28);
+  const sample = {
+    step: prior.age + 1, x: blob.cx, y: blob.cy, cellWidth: 2 * obs.aperture / obs.grid,
+  };
+  const motionSamples = [...prior.motionSamples.slice(-VELOCITY_INTERVALS), sample];
+  const first = motionSamples[0]!;
+  const elapsed = sample.step - first.step;
+  const vx = (sample.x - first.x) / elapsed;
+  const vy = (sample.y - first.y) / elapsed;
+  const scale = MAX_TRACK_SPEED / Math.max(MAX_TRACK_SPEED, hypot(vx, vy));
+  // Half a cell at each endpoint on each axis, divided by actual elapsed world steps.
+  const velocitySpread = Math.SQRT2 * (first.cellWidth + sample.cellWidth) / (2 * elapsed);
   const t: Track = {
     ...prior,
     x: blob.cx,
     y: blob.cy,
     vx: vx * scale,
     vy: vy * scale,
+    velocitySpread,
+    motionSamples,
     hue: lerpHue(prior.hue, blob.hue - ep.lightEstimate, 0.32),
     fill: prior.fill * 0.65 + blob.fill * 0.35,
     evidence: prior.evidence * 0.45 + 0.55,
@@ -237,7 +260,7 @@ function perceive(ep: Agent, blobs: Blob[], obs: Observation, action: number, sc
   const misses = priors.map((t) => predictMiss(t, obs));
   const matches = priors.map((prior, i) => {
     const options = blobs.map((blob) => {
-      if (hypot(blob.cx - misses[i]!.x, blob.cy - misses[i]!.y) > 16) return null;
+      if (hypot(blob.cx - misses[i]!.x, blob.cy - misses[i]!.y) > matchRadius(prior)) return null;
       return matchTrack(ep, prior, blob, obs);
     });
     for (const t of options) {
@@ -536,7 +559,7 @@ function energies(ep: Agent, tracks: Track[], misses: Track[], blobs: Blob[], ac
     const prior = ep.tracks.find((p) => p.id === t.id);
     if (prior) {
       bindingError += (Math.abs(prior.fill - blob.fill) + hueDelta(prior.hue + ep.lightEstimate, blob.hue) / 180) / 2;
-      motionError += clamp(t.flowError / 16);
+      motionError += clamp(t.flowError / matchRadius(prior));
     } else {
       // A new identity explains a patch, but has no trajectory to support it.
       motionError += 0.5;
