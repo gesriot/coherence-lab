@@ -12,6 +12,11 @@ const SCENARIOS: { id: ScenarioId; label: string; hint: string }[] = [
     hint: "Диск A уходит за стену. После его появления оценщик проверяет, сохранился ли номер трека.",
   },
   {
+    id: "vanish",
+    label: "Исчезновение",
+    hint: "Диск A исчезает на открытом месте. Оценщик проверяет, как долго сохраняется его трек.",
+  },
+  {
     id: "binding",
     label: "Связывание",
     hint: "На шаге 16 цвета A и B меняются. Номер гипотезы должен остаться у тела, оттенок – обновиться.",
@@ -462,7 +467,7 @@ export function LabApp() {
             <ul className="mt-2 space-y-1 font-mono text-xs text-muted">
               {view.evaluator.objects.map((object) => (
                 <li key={object.id}>
-                  {object.id} {object.occluded ? "скрыт" : "виден"} · гипотеза{" "}
+                  {object.id} {object.vanished ? "исчез" : object.occluded ? "скрыт" : "виден"} · гипотеза{" "}
                   {object.nearestTrack == null ? "нет" : `T${object.nearestTrack}`}
                   {object.trackHue != null ? ` · оттенок ${Math.round(object.trackHue)}` : ""}
                 </li>

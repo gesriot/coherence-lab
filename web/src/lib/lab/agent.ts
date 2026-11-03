@@ -90,6 +90,7 @@ export function snapshot(ep: Episode, ablation: Ablation): ViewState {
         nearest = t;
       }
     }
+    const vanished = o.vanishAt != null && ep.world.t >= o.vanishAt;
     const occluded = hiddenByOccluder(o, ep.world.occluder);
     const close = nearest && dist < (agent.stepIndex === 0 ? 14 : 12) ? nearest : null;
     return {
@@ -99,7 +100,8 @@ export function snapshot(ep: Episode, ablation: Ablation): ViewState {
       trackHue: close ? close.hue : null,
       dist: close ? dist : null,
       occluded,
-      visible: !occluded,
+      vanished,
+      visible: !vanished && !occluded,
     };
   });
   const target = reports[0];

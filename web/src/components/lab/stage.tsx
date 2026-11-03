@@ -92,7 +92,9 @@ export function Stage({ view, showTruth, showHypotheses, onPick }: StageProps) {
         ctx.strokeRect(X(occ.x) + 0.5, Y(occ.y) + 0.5, occ.w * scale, occ.h * scale);
 
         for (const object of view.objects) {
-          const hidden = view.evaluator.objects.find((item) => item.id === object.id)?.occluded;
+          const report = view.evaluator.objects.find((item) => item.id === object.id);
+          if (report?.vanished) continue;
+          const hidden = report?.occluded;
           ctx.save();
           ctx.globalAlpha = hidden ? 0.35 : 1;
           ctx.fillStyle = `hsl(${object.hue} 68% 52%)`;

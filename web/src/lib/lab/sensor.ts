@@ -14,6 +14,7 @@ function sample(world: World, x: number, y: number, i: number): Cell {
   }
   for (let k = world.objects.length - 1; k >= 0; k--) {
     const o = world.objects[k]!;
+    if (o.vanishAt != null && world.t >= o.vanishAt) continue;
     if (hiddenByOccluder(o, occ)) continue;
     if (!contains(o, x, y)) continue;
     const hue = wrapHue(o.hue + world.light + hueNoise(world.seed, world.t, i) * world.noise);

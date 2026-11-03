@@ -30,7 +30,7 @@ export function makeWorld(scenario: ScenarioId, seed: number): World {
     vx: number, vy: number, r: number,
   ): SimObject {
     return {
-      id, shape, hue, r,
+      id, shape, hue, r, vanishAt: null,
       x: x + 2 * jitter(),
       y: y + 2 * jitter(),
       vx: vx * (1 + 0.08 * jitter()) + 0.025 * jitter(),
@@ -55,6 +55,16 @@ export function makeWorld(scenario: ScenarioId, seed: number): World {
         obj("A", "disk", 18, 16, 50, 1.65, 0, 4),
         obj("B", "square", 208, 82, 30, -0.04, 0.22, 6.5),
       ],
+    };
+  }
+
+  if (scenario === "vanish") {
+    const a = obj("A", "disk", 18, 22, 32, 0.35, 0.12, 4);
+    a.vanishAt = 20 + Math.floor(4 * hashUnit(seed));
+    return {
+      ...base,
+      occluder: { x: 60, y: 6, w: 12, h: 16 },
+      objects: [a, obj("B", "square", 208, 78, 72, -0.12, 0.08, 6)],
     };
   }
 
@@ -101,6 +111,7 @@ export function makeWorld(scenario: ScenarioId, seed: number): World {
 
 export function initialGaze(scenario: ScenarioId): { x: number; y: number; aperture: number } {
   if (scenario === "continuity") return { x: 16, y: 50, aperture: 20 };
+  if (scenario === "vanish") return { x: 22, y: 32, aperture: 20 };
   if (scenario === "binding") return { x: 24, y: 51, aperture: 28 };
   if (scenario === "conflict") return { x: 74, y: 50, aperture: 24 };
   return { x: 50, y: 48, aperture: 30 };
@@ -110,6 +121,7 @@ export function advanceWorld(world: World): void {
   world.t += 1;
   world.light = Math.sin(world.t * 0.08) * 20;
   for (const o of world.objects) {
+    if (o.vanishAt != null && world.t > o.vanishAt) continue;
     o.x += o.vx;
     o.y += o.vy;
     if (o.x < o.r) {

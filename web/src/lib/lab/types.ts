@@ -12,7 +12,7 @@ export type UncertaintyReason =
 
 export type Ablation = "full" | "first-order" | "novelty" | "record-only" | "no-schema" | "dummy-memory";
 
-export type ScenarioId = "continuity" | "binding" | "conflict" | "nursery";
+export type ScenarioId = "continuity" | "binding" | "conflict" | "nursery" | "vanish";
 
 export type Agreement = "settled" | "competing" | "underdetermined";
 
@@ -29,6 +29,7 @@ export type AttentionReason =
   | "idle";
 
 export interface SimObject {
+  vanishAt: number | null;
   id: string;
   shape: Shape;
   hue: number;
@@ -165,6 +166,7 @@ export interface ObjectReport {
   nearestTrack: number | null;
   trackHue: number | null;
   dist: number | null;
+  vanished: boolean;
   occluded: boolean;
   visible: boolean;
 }
