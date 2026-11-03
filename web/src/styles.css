@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #101410;
+  --color-surface: #18201b;
+  --color-raised: #222c26;
+  --color-fg: #ebe6da;
+  --color-muted: #9aa396;
+  --color-line: #314038;
+  --color-accent: #e0a15a;
+  --color-accent-ink: #24180c;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Newsreader", ui-serif, Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-bg);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  .lab-card {
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    border-radius: 1rem;
+  }
+
+  .pill,
+  .pill-on {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 2.75rem;
+    padding: 0.35rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-line);
+    font-size: 0.875rem;
+    line-height: 1.2;
+  }
+
+  .pill {
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  .pill:hover {
+    border-color: var(--color-accent);
+  }
+
+  .pill-on {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+}
