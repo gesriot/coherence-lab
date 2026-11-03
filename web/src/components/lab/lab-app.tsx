@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, RotateCcw, StepForward } from "lucide-react";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "@/lib/lab/agent";
-import { causalLabel, criterion, decimal, explorationNote, formatRate, replayDescription, sharedDetection, type BenchReport } from "@/lib/lab/bench";
+import { causalLabel, criterion, decimal, explorationNote, formatRate, sharedDetection, type BenchReport } from "@/lib/lab/bench";
 import type { Ablation, Agreement, AttentionReason, ScenarioId, SourceKind, UncertaintyReason, ViewState } from "@/lib/lab/types";
 import { Stage } from "@/components/lab/stage";
 
@@ -160,6 +160,7 @@ export function LabApp() {
 
   const pending = benchFailed ? "Не удалось рассчитать бенчмарк." : "Идёт расчёт…";
   const firstOrder = bench?.rows.find((row) => row.id === "first-order");
+  const budgetNote = bench ? explorationNote(bench.rows) : "";
   const schemaEnabled = ablation === "full" || ablation === "record-only";
   const retainedLabel =
     view.evaluator.retained == null ? "ещё рано" : view.evaluator.retained ? "удержана" : "потеряна";
@@ -318,8 +319,8 @@ export function LabApp() {
                       />
                     </div>
                     <p className="mt-1 font-mono text-xs text-muted tabular-nums">
-                      увер. {track.confidence.toFixed(2)} · неопр. {track.uncertainty.toFixed(2)} · свидет.{" "}
-                      {track.evidence.toFixed(2)}
+                      увер. {decimal(track.confidence, 2)} · неопр. {decimal(track.uncertainty, 2)} · свидет.{" "}
+                      {decimal(track.evidence, 2)}
                     </p>
                   </li>
                 ))}
@@ -338,7 +339,7 @@ export function LabApp() {
                   {view.attention.influencesAction ? "" : " · на действие не влияет"}
                 </p>
                 <p className="font-mono text-xs text-muted tabular-nums">
-                  ошибка самомодели {view.attention.selfError == null ? "–" : view.attention.selfError.toFixed(2)}
+                  ошибка самомодели {decimal(view.attention.selfError, 2)}
                   {" · "}память {view.memoryFrames || 0} кадров
                 </p>
               </div>
@@ -374,7 +375,7 @@ export function LabApp() {
               Меньшее значение не означает «больше сознания»: это лишь ошибка согласования. Пустая сцена при непустом входе штрафуется.
             </p>
           </div>
-          <p className="font-mono text-sm text-accent tabular-nums">E {view.energy.total.toFixed(2)}</p>
+          <p className="font-mono text-sm text-accent tabular-nums">E {decimal(view.energy.total, 2)}</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <EnergyRow label="Сенсорика" value={view.energy.sensory} />
@@ -387,7 +388,7 @@ export function LabApp() {
         <figure className="mt-4">
           <figcaption className="text-xs text-muted">Итерации согласования · E от исходной сцены до остановки</figcaption>
           <svg className="mt-1 h-12 w-44" viewBox="0 0 160 42" role="img"
-            aria-label={view.energyTrace.map((value) => value.toFixed(3)).join(" → ")}>
+            aria-label={view.energyTrace.map((value) => decimal(value, 3)).join(" → ")}>
             <polyline fill="none" stroke="currentColor" strokeWidth="2" className="text-accent"
               points={view.energyTrace.map((value, i) =>
                 `${2 + 156 * i / Math.max(1, view.energyTrace.length - 1)},${40 - 38 * value}`).join(" ")} />
@@ -403,7 +404,7 @@ export function LabApp() {
           ))}
         </div>
         <p className="mt-3 font-mono text-xs text-muted tabular-nums">
-          свет мира {view.evaluator.lightTrue.toFixed(1)}° · оценка {view.evaluator.lightEstimated.toFixed(1)}° · шум{" "}
+          свет мира {decimal(view.evaluator.lightTrue, 1)}° · оценка {decimal(view.evaluator.lightEstimated, 1)}° · шум{" "}
           {view.noise.toFixed(0)}°
           {view.swapped ? " · цвета тел обменены" : ""}
           {view.energy.overconfident ? " · штраф за самоуверенность" : ""}
@@ -515,11 +516,11 @@ export function LabApp() {
           <div>
             <h2 className="font-display text-2xl">Протокол</h2>
             <p className="max-w-2xl text-sm text-muted">
-              {bench ? "Доли успеха и 95%-е интервалы Уилсона." : pending}
+              {bench ? "Доли успеха приведены с 95%-ми интервалами Уилсона. Шаги обхода усреднены по эпизодам «Непрерывности» и «Конфликта»." : pending}
             </p>
           </div>
           <p className="text-sm text-muted">{criterion}</p>
-          {bench && <p className="text-sm text-muted">{explorationNote(bench.rows)}</p>}
+          {budgetNote && <p className="text-sm text-muted">{budgetNote}</p>}
           <p className="text-sm text-muted">Версия A без обучения: проверяет функцию дирижёра (CTC), но не гипотезу Genesis.</p>
         </div>
         <div className="overflow-x-auto">
@@ -551,10 +552,10 @@ export function LabApp() {
                   </td>
                   <td className="py-2 pr-3 font-mono tabular-nums">{decimal(row.exploreSteps, 2)}</td>
                   <td className="py-2 pr-3 font-mono tabular-nums">
-                    {row.selfError == null ? "–" : row.selfError.toFixed(3).replace(".", ",")}
+                    {decimal(row.selfError)}
                   </td>
                   <td className="py-2 font-mono tabular-nums">
-                    {row.actionError == null ? "–" : row.actionError.toFixed(3).replace(".", ",")}
+                    {decimal(row.actionError)}
                   </td>
                 </tr>
               ))}
@@ -578,8 +579,17 @@ export function LabApp() {
           </div>
           <div className="rounded-lg border border-line px-3 py-2 sm:col-span-3">
             <dt className="text-xs text-muted">Обнаружение повтора по собственному прогнозу</dt>
-            <dd>
-              {bench ? bench.replay.map((r) => <p key={r.label}>{replayDescription(r)}</p>) : pending}
+            <dd className="mt-2 space-y-2">
+              {bench ? bench.replay.map((r) => (
+                <div key={r.label}>
+                  <p>{r.label} · {r.detected ? "обнаружен" : "не обнаружен"} · AUC {decimal(r.auc)}</p>
+                  <p className="text-xs text-muted">
+                    Средняя ошибка: {decimal(r.liveError)} в живом эпизоде, {decimal(r.replayError)} при повторе.
+                    Медиана парной разницы: {decimal(r.medianDifference)}.
+                    {" "}Пар с большей ошибкой при повторе: {formatRate(r.higher)}.
+                  </p>
+                </div>
+              )) : pending}
               {bench?.replay.every((r) => r.detected) && <p>{sharedDetection}</p>}
             </dd>
           </div>
@@ -595,7 +605,7 @@ function EnergyRow({ label, value }: { label: string; value: number | null }) {
     <div>
       <div className="mb-1 flex justify-between text-xs text-muted">
         <span>{label}</span>
-        <span className="font-mono tabular-nums">{value == null ? "–" : value.toFixed(2)}</span>
+        <span className="font-mono tabular-nums">{decimal(value, 2)}</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-bg">
         <div className="h-full bg-accent" style={{ width: value == null ? "0%" : `${Math.round(shown * 100)}%` }} />

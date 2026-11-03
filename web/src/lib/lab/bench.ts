@@ -142,7 +142,7 @@ function actionScore(views: ViewState[]): number {
 
 const CONDITIONS: { id: Ablation; label: string; detail: string }[] = [
   { id: "full", label: "Полный контур", detail: "Модель восприятия двигает взгляд" },
-  { id: "first-order", label: "Первый порядок", detail: "Сопровождение трека по прогнозу движения" },
+  { id: "first-order", label: "Первый порядок", detail: "Прогноз движения и обход по карте просмотра" },
   { id: "record-only", label: "Только запись", detail: "Модель есть, на действие не влияет" },
   { id: "no-schema", label: "Без модели", detail: "Взгляд направлен к самому крупному пятну" },
   { id: "dummy-memory", label: "Лишняя память", detail: "Буфер кадров без схемы внимания" },
@@ -191,7 +191,7 @@ export function explorationNote(rows: BenchRow[]): string {
 }
 
 export function replayDescription(result: ReplayResult): string {
-  return `${result.label}: ${result.detected ? "обнаружен" : "не обнаружен"} (AUC ${decimal(result.auc)}). Средняя ошибка в живом эпизоде / при повторе: ${decimal(result.liveError)} / ${decimal(result.replayError)}. Медиана парной разницы: ${decimal(result.medianDifference)}. Ошибка выше при повторе в ${formatRate(result.higher)}.`;
+  return `${result.label}: ${result.detected ? "обнаружен" : "не обнаружен"} (AUC ${decimal(result.auc)}). Средняя ошибка в живом эпизоде / при повторе: ${decimal(result.liveError)} / ${decimal(result.replayError)}. Медиана парной разницы: ${decimal(result.medianDifference)}. Пар с большей ошибкой при повторе: ${formatRate(result.higher)}.`;
 }
 
-export const sharedDetection = "Оба условия различают повтор по ошибке прогноза. Этот сигнал доступен уже модели первого порядка.";
+export const sharedDetection = "Оценщик обнаружил повтор в обоих условиях. Различение повтора по этой ошибке – свойство прогноза первого порядка.";
