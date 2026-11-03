@@ -486,8 +486,12 @@ function schemaDecision(ep: Agent): Decision {
   return explore(ep.lastViewed);
 }
 
-export function firstOrderDecision(ep: Agent): Decision {
-  const focus = ep.tracks.find((t) => t.id === ep.attention.focusId)
+export function firstOrderDecision(ep: Agent, policy: "first-order" | "novelty" = "first-order"): Decision {
+  const young = policy === "novelty"
+    ? ep.tracks.filter((t) => t.age <= 6).sort((a, b) => a.age - b.age || a.id - b.id)[0]
+    : undefined;
+  const focus = young
+    ?? ep.tracks.find((t) => t.id === ep.attention.focusId)
     ?? [...ep.tracks].sort((a, b) => b.evidence - a.evidence)[0];
   if (!focus) return explore(ep.lastViewed);
   if (explorationDue(ep.cycle) && focus.boundBlob != null) {
@@ -707,8 +711,8 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
     };
   } else if (ablation === "full" && schema) {
     executed = schema;
-  } else if (ablation === "first-order") {
-    executed = firstOrderDecision(ep);
+  } else if (ablation === "first-order" || ablation === "novelty") {
+    executed = firstOrderDecision(ep, ablation);
   } else {
     executed = salienceDecision(ep, ablation === "dummy-memory");
   }

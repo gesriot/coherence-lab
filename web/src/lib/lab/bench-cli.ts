@@ -1,7 +1,8 @@
-import { causalLabel, criterion, decimal, explorationNote, formatRate, replayDescription, runBench, sharedDetection } from "./bench.ts";
+import { ageAssumption, causalLabel, criterion, decimal, explorationNote, formatRate, replayDescription, runBench, sharedDetection } from "./bench.ts";
 
 const report = runBench();
 console.log(criterion);
+console.log(ageAssumption);
 console.log("Доли успеха и 95%-е интервалы Уилсона");
 console.table(report.rows.map((row) => ({
   Условие: row.label,
@@ -12,6 +13,7 @@ console.table(report.rows.map((row) => ({
   "Ошибка действия": decimal(row.actionError),
 })));
 console.log("Причинная роль модели второго порядка:", causalLabel[report.causal]);
+console.log("Альтернативное объяснение правилом первого порядка:", report.alternativeExcluded ? "исключено" : "не исключено");
 for (const message of report.saturation) console.log(message);
 const note = explorationNote(report.rows);
 if (note) console.log(note);

@@ -5,7 +5,7 @@ import { classify, extractBlobs } from "./observe.ts";
 import { hueDelta } from "./math.ts";
 import { advanceWorld, hiddenByOccluder, makeWorld } from "./world.ts";
 import { createAgent, firstOrderDecision, stepAgent } from "./perception.ts";
-import { assess, explorationRate, replayStats, saturationNotes, wilson, type BenchRow } from "./bench.ts";
+import { assess, beatsControl, explorationRate, replayStats, saturationNotes, wilson, type BenchRow } from "./bench.ts";
 import type { Ablation, Observation } from "./types.ts";
 
 test("the episode entry point advances one world step", () => {
@@ -349,4 +349,55 @@ test("saturation requires both policies at the same inclusive edge of each task"
 
 test("exploration rate pools steps across episodes of different lengths", () => {
   assert.equal(explorationRate([{ explored: 1, steps: 2 }, { explored: 0, steps: 8 }]), 0.1);
+});
+
+test("novelty prioritizes the youngest track, breaks ties by id and falls back to the sticky focus", () => {
+  const ep = createAgent(patches([1, 4, 6]), "novelty");
+  const [a, b, c] = ep.tracks;
+  ep.tracks = [c!, b!, a!];
+  ep.attention.focusId = c!.id;
+  a!.age = b!.age = 6;
+  c!.age = 7;
+  assert.equal(firstOrderDecision(ep, "novelty").focusId, a!.id);
+  b!.age = 5;
+  assert.equal(firstOrderDecision(ep, "novelty").focusId, b!.id);
+  for (const t of ep.tracks) t.age = 7;
+  b!.evidence = 0.99;
+  assert.equal(firstOrderDecision(ep, "novelty").focusId, c!.id);
+  ep.attention.focusId = null;
+  assert.equal(firstOrderDecision(ep, "novelty").focusId, b!.id);
+});
+
+test("novelty uses the shared schedule and ignores second-order state", () => {
+  const ep = createAgent(patches([1, 6]), "novelty");
+  stepAgent(ep, patches([1, 6]), { ...defaultConfig(), ablation: "novelty" });
+  assert.equal(ep.attention.active, false);
+  assert.equal(ep.energy.self, null);
+  for (const cycle of [1, 8]) {
+    ep.cycle = cycle;
+    const before = firstOrderDecision(ep, "novelty");
+    assert.equal(before.reason, cycle === 8 ? "explore" : "pursue");
+    assert.equal(before.aperture, cycle === 8 ? 22 : 18);
+    for (const t of ep.tracks) {
+      t.source = t.source === "observed" ? "mixed" : "observed";
+      t.reason = t.reason === "none" ? "conflict" : "none";
+      t.uncertainty = 1 - t.uncertainty;
+      t.conflict = !t.conflict;
+    }
+    ep.attention.agreement = ep.attention.agreement === "settled" ? "competing" : "settled";
+    assert.deepEqual(firstOrderDecision(ep, "novelty"), before);
+  }
+});
+
+test("functional replacement is excluded only beyond the strict margin on either task", () => {
+  const row = (id: Ablation, holds: number, pairs: number): BenchRow => ({
+    id, label: id, detail: "", retention: wilson(holds, 200), pair: wilson(pairs, 200),
+    exploreRate: 0, selfError: null, actionError: 0,
+  });
+  const full = row("full", 170, 180);
+  assert.equal(beatsControl(full, row("novelty", 130, 140)), false);
+  assert.equal(beatsControl(full, row("novelty", 129, 180)), true);
+  assert.equal(beatsControl(full, row("novelty", 170, 139)), true);
+  const controls = [row("first-order", 0, 0), row("record-only", 0, 0), row("dummy-memory", 0, 0)];
+  assert.equal(assess([full, ...controls, row("novelty", 200, 200)]), "supported");
 });

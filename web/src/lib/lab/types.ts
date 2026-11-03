@@ -10,7 +10,7 @@ export type UncertaintyReason =
   | "absence"
   | "no-data";
 
-export type Ablation = "full" | "first-order" | "record-only" | "no-schema" | "dummy-memory";
+export type Ablation = "full" | "first-order" | "novelty" | "record-only" | "no-schema" | "dummy-memory";
 
 export type ScenarioId = "continuity" | "binding" | "conflict" | "nursery";
 

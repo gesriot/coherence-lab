@@ -40,6 +40,7 @@ export interface BenchReport {
   rows: BenchRow[];
   replay: ReplayResult[];
   saturation: string[];
+  alternativeExcluded: boolean;
   causal: "supported" | "unsupported" | "mixed";
 }
 
@@ -48,6 +49,8 @@ export const causalLabel = {
   mixed: "смешанный результат",
   unsupported: "не подтверждена",
 };
+
+export const ageAssumption = "Возраст трека – число шагов с момента рождения гипотезы. В этом эксперименте он считается полем первого порядка.";
 
 export const criterion = `Удержание A проверяется за 72 шага, различение пары – за ${PAIR_STEPS}. На ${CONFIGURATIONS} конфигурациях полный контур должен опередить каждый из трёх контролей (первый порядок, только запись, лишняя память) более чем на ${TASK_MARGIN * 100} п. п. хотя бы по одной задаче. Отдельно оценщик различает живой эпизод и повтор по ошибке прогноза за шаги 17–40. Критерий обнаружения повтора: AUC ≥ ${decimal(AUC_THRESHOLD, 1)}.`;
 
@@ -92,16 +95,18 @@ export function replayStats(label: string, live: number[], replay: number[]): Re
   };
 }
 
+export function beatsControl(full: BenchRow, control: BenchRow): boolean {
+  // All policies use the same N. Compare counts to keep the strict boundary exact.
+  return (["retention", "pair"] as const).some((metric) =>
+    full[metric].k - control[metric].k > TASK_MARGIN * control[metric].n);
+}
+
 export function assess(rows: BenchRow[]): BenchReport["causal"] {
   const row = (id: Ablation) => rows.find((item) => item.id === id)!;
   const full = row("full");
-  const beats = (id: Ablation) => (["retention", "pair"] as const).some((metric) => {
-    const control = row(id)[metric];
-    // All policies use the same N. Compare counts to keep the strict boundary exact.
-    return full[metric].k - control.k > TASK_MARGIN * control.n;
-  });
-  if (!beats("first-order")) return "unsupported";
-  return beats("record-only") && beats("dummy-memory") ? "supported" : "mixed";
+  if (!beatsControl(full, row("first-order"))) return "unsupported";
+  return beatsControl(full, row("record-only")) && beatsControl(full, row("dummy-memory"))
+    ? "supported" : "mixed";
 }
 
 export function saturationNotes(
@@ -171,6 +176,7 @@ function actionScore(views: ViewState[]): number {
 const CONDITIONS: { id: Ablation; label: string; detail: string }[] = [
   { id: "full", label: "Полный контур", detail: "Модель восприятия двигает взгляд" },
   { id: "first-order", label: "Первый порядок", detail: "Прогноз движения и обход по карте просмотра" },
+  { id: "novelty", label: "Новизна", detail: "Приоритет недавно появившихся треков" },
   { id: "record-only", label: "Только запись", detail: "Модель есть, на действие не влияет" },
   { id: "no-schema", label: "Без модели", detail: "Взгляд направлен к самому крупному пятну" },
   { id: "dummy-memory", label: "Лишняя память", detail: "Буфер кадров без схемы внимания" },
@@ -212,7 +218,14 @@ export function runBench(): BenchReport {
   });
   const full = rows.find((r) => r.id === "full")!;
   const first = rows.find((r) => r.id === "first-order")!;
-  return { configurations: CONFIGURATIONS, rows, replay, causal: assess(rows), saturation: saturationNotes(full, first) };
+  return {
+    configurations: CONFIGURATIONS,
+    rows,
+    replay,
+    causal: assess(rows),
+    saturation: saturationNotes(full, first),
+    alternativeExcluded: beatsControl(full, rows.find((r) => r.id === "novelty")!),
+  };
 }
 
 export function explorationNote(rows: BenchRow[]): string {
