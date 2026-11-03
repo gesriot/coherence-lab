@@ -54,7 +54,8 @@ export interface Agent {
   grid: number;
   blobs: Blob[];
   obsGaze: { x: number; y: number; aperture: number };
-  memoryFrames: number;
+  workspaceCapacity: number;
+  salienceFrames: (Blob | null)[];
   focusHold: number;
 }
 
@@ -294,12 +295,15 @@ function perceive(ep: Agent, blobs: Blob[], obs: Observation): void {
     finishTrack(t);
   }
 
+}
+
+function selectWorkspace(ep: Agent): void {
   const ranked = [...ep.tracks].sort((a, b) => {
     const score = (t: Track) =>
       t.confidence + (t.conflict ? 0.22 : 0) + (t.reason === "occlusion" ? 0.18 : 0);
     return score(b) - score(a);
   });
-  const keep = new Set(ranked.slice(0, WORKSPACE).map((t) => t.id));
+  const keep = new Set(ranked.slice(0, ep.workspaceCapacity).map((t) => t.id));
   for (const t of ep.tracks) t.inWorkspace = keep.has(t.id);
 }
 
@@ -335,7 +339,8 @@ function priority(t: Track, gazeX: number, gazeY: number, aperture: number): num
 }
 
 function schemaDecision(ep: Agent): Decision {
-  const held = ep.focusHold > 0 ? ep.tracks.find((t) => t.id === ep.attention.focusId) : undefined;
+  const workspace = ep.tracks.filter((t) => t.inWorkspace);
+  const held = ep.focusHold > 0 ? workspace.find((t) => t.id === ep.attention.focusId) : undefined;
   if (held && (held.reason === "occlusion" || held.conflict || held.uncertainty > 0.18)) {
     ep.focusHold -= 1;
     const reason: AttentionReason = held.reason === "occlusion" || held.source !== "observed" ? "verify" : held.conflict ? "conflict" : "uncertainty";
@@ -349,7 +354,7 @@ function schemaDecision(ep: Agent): Decision {
     };
   }
 
-  const conflicts = ep.tracks.filter((t) => t.conflict);
+  const conflicts = workspace.filter((t) => t.conflict);
   if (conflicts.length > 0) {
     const x = conflicts.reduce((s, t) => s + t.x, 0) / conflicts.length;
     const y = conflicts.reduce((s, t) => s + t.y, 0) / conflicts.length;
@@ -365,7 +370,7 @@ function schemaDecision(ep: Agent): Decision {
 
   let best: Track | null = null;
   let bestScore = -1;
-  for (const t of ep.tracks) {
+  for (const t of workspace) {
     const score = priority(t, ep.gazeX, ep.gazeY, ep.aperture);
     if (score > bestScore) {
       bestScore = score;
@@ -390,7 +395,7 @@ function schemaDecision(ep: Agent): Decision {
     };
   }
 
-  const settled = ep.tracks.length > 0 && ep.tracks.every((t) => t.unseen === 0 && t.uncertainty < 0.34 && !t.conflict);
+  const settled = workspace.length > 0 && workspace.every((t) => t.unseen === 0 && t.uncertainty < 0.34 && !t.conflict);
   if (ep.cycle > 0 && ep.cycle % 8 === 0 && settled) {
     const p = WAYPOINTS[Math.floor(ep.cycle / 8) % WAYPOINTS.length]!;
     return {
@@ -403,7 +408,7 @@ function schemaDecision(ep: Agent): Decision {
     };
   }
 
-  const pursued = ep.tracks.filter((t) => t.source === "observed" && t.boundBlob != null);
+  const pursued = workspace.filter((t) => t.source === "observed" && t.boundBlob != null);
   if (pursued.length > 0) {
     const sticky = pursued.find((t) => t.id === ep.attention.focusId) ?? pursued[0]!;
     return {
@@ -418,19 +423,40 @@ function schemaDecision(ep: Agent): Decision {
   return explore(ep.cycle);
 }
 
-function salienceDecision(ep: Agent): Decision {
-  if (ep.blobs.length === 0) {
+function firstOrderDecision(ep: Agent): Decision {
+  const focus = ep.tracks.find((t) => t.id === ep.attention.focusId)
+    ?? [...ep.tracks].sort((a, b) => b.evidence - a.evidence)[0];
+  if (!focus) return { ...explore(ep.cycle), aperture: 18 };
+  return {
+    x: clamp(focus.x + focus.vx, 4, 96),
+    y: clamp(focus.y + focus.vy, 4, 96),
+    aperture: 18,
+    reason: "pursue",
+    focusId: focus.id,
+    note: "Взгляд следует прогнозу положения выбранного трека.",
+  };
+}
+
+function salienceDecision(ep: Agent, useMemory: boolean): Decision {
+  const largest = [...ep.blobs].sort((a, b) => b.area - a.area)[0] ?? null;
+  if (useMemory) {
+    // One salient patch per frame, with the same slot budget as the workspace.
+    ep.salienceFrames.push(largest);
+    if (ep.salienceFrames.length > ep.workspaceCapacity) ep.salienceFrames.shift();
+  }
+  const blob = largest ?? [...ep.salienceFrames].reverse().find((patch) => patch != null);
+  if (!blob) {
     const wander = explore(ep.cycle);
     return { ...wander, reason: "salience", note: "Без модели внимания: в окне пусто, иду по дуге обхода." };
   }
-  const blob = [...ep.blobs].sort((a, b) => b.area - a.area)[0]!;
   return {
     x: clamp(blob.cx, 4, 96),
     y: clamp(blob.cy, 4, 96),
     aperture: WIDE,
     reason: "salience",
-    focusId: null,
-    note: "Без влияния модели: взгляд прилип к самой большой видимой области.",
+    focusId: largest ? ep.tracks.find((t) => t.boundBlob === largest.index)?.id ?? null : null,
+    note: largest ? "Взгляд направлен к самому крупному пятну." : "В окне пусто. Проверяю место последнего крупного пятна.",
+
   };
 }
 
@@ -560,13 +586,15 @@ export function createAgent(obs: Observation): Agent {
     grid: 12,
     blobs: [],
     obsGaze: gaze,
-    memoryFrames: 0,
+    workspaceCapacity: WORKSPACE,
+    salienceFrames: [],
     focusHold: 0,
   };
   ep.cells = obs.cells;
   ep.grid = obs.grid;
   ep.blobs = extractBlobs(obs);
   perceive(ep, ep.blobs, obs);
+  selectWorkspace(ep);
   rememberWall(ep, obs);
   ep.guesses = buildGuesses(ep, gaze.x, gaze.y, gaze.aperture);
   ep.energy = energies(ep, ep.blobs, 0, true);
@@ -595,18 +623,27 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
     const actualObserved = !!now && now.boundBlob != null && now.source === "observed";
     const miss = ep.predictedObserved === actualObserved ? 0 : 0.7;
     ep.selfError = clamp(miss + 0.3 * Math.min(1, Math.abs(ep.predictedDrop - actualDrop)));
-  } else if (schemaOn) {
-    ep.selfError = ep.stepIndex === 0 ? 0 : ep.selfError;
+
   } else {
     ep.selfError = null;
   }
 
+  if (cfg.injectConfidence && schemaOn) {
+    for (const t of ep.tracks) {
+      t.uncertainty = 0.02;
+      t.confidence = 0.98;
+      t.conflict = false;
+      t.reason = "none";
+    }
+  }
+  selectWorkspace(ep);
   ep.energy = energies(ep, ep.blobs, actionError, schemaOn);
   ep.history.push({ step: ep.stepIndex, total: ep.energy.total });
   if (ep.history.length > 48) ep.history.shift();
 
   const ablation: Ablation = cfg.ablation;
-  if (cfg.ablation !== "full" || cfg.injectConfidence || cfg.pinGaze) ep.focusHold = 0;
+  if (!schemaOn || cfg.pinGaze) ep.focusHold = 0;
+  if (ablation !== "dummy-memory") ep.salienceFrames = [];
   const schema = schemaOn ? schemaDecision(ep) : null;
   let executed: Decision;
   if (cfg.pinGaze) {
@@ -620,31 +657,25 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
     };
   } else if (ablation === "full" && schema) {
     executed = schema;
-    if (cfg.injectConfidence) {
-      executed = {
-        ...explore(ep.cycle),
-        note: "Уверенность подменена. Контур считает сцену решённой и перестаёт проверять.",
-      };
-      executed.focusId = schema.focusId;
-    }
+  } else if (ablation === "first-order") {
+    executed = firstOrderDecision(ep);
   } else {
-    executed = salienceDecision(ep);
+    executed = salienceDecision(ep, ablation === "dummy-memory");
   }
 
-  const predictFrom = schema ?? executed;
   if (schema && schema.focusId !== ep.attention.focusId) ep.focusHold = 4;
-  const pred = selfPrediction(ep, predictFrom);
+  const pred = schemaOn ? selfPrediction(ep, executed) : { observed: false, drop: 0 };
   ep.predictedObserved = pred.observed;
   ep.predictedDrop = pred.drop;
-  ep.focusPrevId = predictFrom.focusId;
+  ep.focusPrevId = schemaOn ? executed.focusId : null;
   ep.prevU = {};
   for (const t of ep.tracks) ep.prevU[t.id] = t.uncertainty;
 
-  const influences = ablation === "full" && !cfg.pinGaze && !cfg.injectConfidence;
+  const influences = ablation === "full" && !cfg.pinGaze;
   ep.attention = {
     active: schemaOn,
     influencesAction: influences,
-    focusId: schema?.focusId ?? null,
+    focusId: schema ? schema.focusId : executed.focusId,
     reason: influences ? executed.reason : (schema?.reason ?? executed.reason),
     agreement: agreementOf(ep.tracks, ep.blobs),
     intendedX: schema?.x ?? executed.x,
@@ -663,7 +694,6 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
   ep.gazeY = clamp(executed.y, 2, 98);
   ep.aperture = executed.aperture;
   ep.guesses = buildGuesses(ep, ep.gazeX, ep.gazeY, ep.aperture);
-  ep.memoryFrames = ablation === "dummy-memory" ? Math.min(ep.memoryFrames + 1, 36) : 0;
   ep.cycle += 1;
   ep.stepIndex += 1;
 }

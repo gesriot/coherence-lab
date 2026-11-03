@@ -126,7 +126,8 @@ export function snapshot(ep: Episode, ablation: Ablation): ViewState {
     energyTrace: [...agent.energyTrace],
     history: agent.history.map((h) => ({ ...h })),
     coupling: ep.coupling,
-    memoryFrames: agent.memoryFrames,
+    memoryFrames: agent.salienceFrames.length,
+    workspaceCapacity: agent.workspaceCapacity,
     iterationsUsed: agent.iterationsUsed,
     iterationBudget: agent.iterationBudget,
     evaluator: {

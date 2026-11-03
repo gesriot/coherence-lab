@@ -10,7 +10,7 @@ export type UncertaintyReason =
   | "absence"
   | "no-data";
 
-export type Ablation = "full" | "record-only" | "no-schema" | "dummy-memory";
+export type Ablation = "full" | "first-order" | "record-only" | "no-schema" | "dummy-memory";
 
 export type ScenarioId = "continuity" | "binding" | "conflict" | "nursery";
 
@@ -190,6 +190,7 @@ export interface ViewState {
   history: { step: number; total: number }[];
   coupling: "intact" | "broken";
   memoryFrames: number;
+  workspaceCapacity: number;
   iterationsUsed: number;
   iterationBudget: number;
   evaluator: EvaluatorView;

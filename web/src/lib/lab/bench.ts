@@ -90,6 +90,12 @@ export function runBench(): BenchReport {
       ablation: "full",
     },
     {
+      id: "first-order",
+      label: "Первый порядок",
+      detail: "Сопровождение трека по прогнозу движения",
+      ablation: "first-order",
+    },
+    {
       id: "record",
       label: "Только запись",
       detail: "Модель есть, на действие не влияет",
@@ -137,26 +143,26 @@ export function runBench(): BenchReport {
     actionError: mean(replayActions),
   });
 
-  const full = rows[0]!;
-  const none = rows[2]!;
-  const record = rows[1]!;
-  const liveAction = full.actionError ?? 0;
-  const replayAction = rows[4]!.actionError ?? 0;
-  const holdsIdentity = (full.retention ?? 0) > (none.retention ?? 0) + 0.2;
-  const recordIsNotEnough = (full.retention ?? 0) > (record.retention ?? 0) + 0.15;
-  const couplingBreaks = replayAction > liveAction + 0.08;
-  const causal = holdsIdentity && recordIsNotEnough && couplingBreaks ? "supported" : holdsIdentity ? "mixed" : "unsupported";
+  const { causal, summary } = assess(rows, SEEDS.length);
+  return { configurations: SEEDS.length, rows, causal, summary };
+}
 
-  const summary = holdsIdentity
-    ? "На этих семенах модель внимания удерживает идентичность за окклюдером лучше, чем взгляд за яркостью. Это причинная роль для задачи, не свидетельство переживания."
-    : "На этих семенах преимущество модели внимания не воспроизвелось. Стенд это показывает, а не прячет.";
+const TASK_MARGIN = 0.2;
+const REPLAY_MARGIN = 0.08;
+export const criterion = `Для подтверждения полный контур должен обойти каждый из трёх контролей (первый порядок, только запись, лишняя память) хотя бы по одной задаче более чем на ${TASK_MARGIN * 100} п. п. При повторе собственная ошибка прогноза должна вырасти более чем на ${REPLAY_MARGIN.toFixed(2).replace(".", ",")}.`;
 
-  return {
-    configurations: SEEDS.length,
-    rows,
-    causal: couplingBreaks && holdsIdentity ? causal : holdsIdentity ? "mixed" : "unsupported",
-    summary: couplingBreaks
-      ? summary
-      : `${summary} Разрыв сенсомоторной связи ${replayAction > liveAction ? "повысил" : "не повысил"} ошибку действия.`,
-  };
+export function assess(rows: BenchRow[], count: number): Pick<BenchReport, "causal" | "summary"> {
+  const row = (id: string) => rows.find((item) => item.id === id)!;
+  const full = row("full");
+  const beats = (control: BenchRow) => (["retention", "pair"] as const).some((metric) =>
+    full[metric] != null && control[metric] != null && full[metric] > control[metric] + TASK_MARGIN + 1e-12);
+  const first = beats(row("first-order"));
+  const controlsPassed = first && beats(row("record")) && beats(row("dummy"));
+  const live = full.actionError;
+  const replay = row("replay").actionError;
+  const detected = live != null && replay != null && replay > live + REPLAY_MARGIN + 1e-12;
+  const causal = controlsPassed && detected ? "supported" : first ? "mixed" : "unsupported";
+  const comparison = first ? "превзошёл первый порядок с заданным запасом" : "не показал требуемого преимущества над первым порядком";
+  const replayResult = detected ? "Повтор обнаружен по ошибке прогноза." : "Ошибка прогноза не достигла порога обнаружения повтора.";
+  return { causal, summary: `На ${count} конфигурациях полный контур ${comparison}. ${replayResult}` };
 }

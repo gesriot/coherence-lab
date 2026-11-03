@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, RotateCcw, StepForward } from "lucide-react";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "@/lib/lab/agent";
-import { runBench, type BenchReport } from "@/lib/lab/bench";
+import { criterion, runBench, type BenchReport } from "@/lib/lab/bench";
 import type { Ablation, AttentionReason, ScenarioId, SourceKind, UncertaintyReason, ViewState } from "@/lib/lab/types";
 import { Stage } from "@/components/lab/stage";
 
@@ -30,6 +30,7 @@ const SCENARIOS: { id: ScenarioId; label: string; hint: string }[] = [
 
 const ABLATIONS: { id: Ablation; label: string }[] = [
   { id: "full", label: "Полный контур" },
+  { id: "first-order", label: "Первый порядок" },
   { id: "record-only", label: "Только запись" },
   { id: "no-schema", label: "Без модели" },
   { id: "dummy-memory", label: "Лишняя память" },
@@ -327,8 +328,7 @@ export function LabApp() {
               </div>
             ) : (
               <p className="mt-2 text-sm text-muted">
-                Модели текущего восприятия нет. Взгляд идёт за самой большой областью в окне
-                {view.memoryFrames > 0 ? `, хотя буфер хранит ${view.memoryFrames} кадров` : ""}.
+                {view.attention.note} {view.memoryFrames > 0 ? `Кадров в памяти: ${view.memoryFrames}.` : ""}
               </p>
             )}
             <div className="mt-4">
@@ -488,10 +488,11 @@ export function LabApp() {
           <div>
             <h2 className="font-display text-2xl">Протокол</h2>
             <p className="max-w-2xl text-sm text-muted">
-              {bench ? bench.summary : "Считаю сравнения на нескольких семенах…"}
+              {bench ? bench.summary : "Идёт сравнение конфигураций…"}
             </p>
           </div>
-          <p className="font-mono text-xs text-accent">феноменальное сознание – не установлено</p>
+          <p className="text-sm text-muted">{criterion}</p>
+          <p className="text-sm text-muted">Версия A без обучения: проверяет функцию дирижёра (CTC), но не гипотезу Genesis.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[36rem] text-left text-sm">
@@ -532,7 +533,7 @@ export function LabApp() {
           <div className="rounded-lg border border-line px-3 py-2">
             <dt className="text-xs text-muted">Причинная роль</dt>
             <dd>
-              {bench == null ? "считается" : bench.causal === "supported" ? "подтверждена на этих семенах" : "не подтверждена"}
+              {bench == null ? "считается" : { supported: "подтверждена на этих конфигурациях", mixed: "смешанный результат", unsupported: "не подтверждена" }[bench.causal]}
             </dd>
           </div>
           <div className="rounded-lg border border-line px-3 py-2">

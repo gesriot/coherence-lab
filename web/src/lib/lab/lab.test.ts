@@ -93,3 +93,86 @@ test("the next retinal forecast projects an observed wall into the commanded win
   assert.deepEqual(agent.guesses, ["occluder", "empty", "occluder", "empty"]);
   assert.equal(agent.energy.action, 0);
 });
+
+import { assess, type BenchRow } from "./bench.ts";
+import type { Ablation, Observation } from "./types.ts";
+
+function patches(columns: number[], gazeX = 50): Observation {
+  const grid = 8;
+  return {
+    gazeX, gazeY: 50, grid, aperture: 24,
+    cells: Array.from({ length: grid ** 2 }, (_, i) => {
+      const surface = Math.floor(i / grid) === 4 && columns.includes(i % grid);
+      return { hue: 20, saturation: surface ? 70 : 0, lightness: surface ? 50 : 6 };
+    }),
+  };
+}
+
+test("first order keeps its focus and commands the motion forecast at fixed aperture", () => {
+  const agent = createAgent(patches([1, 6]));
+  agent.attention.focusId = agent.tracks[1]!.id;
+  stepAgent(agent, patches([1, 6], 52), { ...defaultConfig(), ablation: "first-order" });
+  const focus = agent.tracks[1]!;
+  assert.equal(agent.attention.focusId, focus.id);
+  assert.equal(agent.gazeX, focus.x + focus.vx);
+  assert.equal(agent.aperture, 18);
+  assert.equal(agent.attention.active, false);
+});
+
+test("only the salience policy with memory returns to a patch after a blank frame", () => {
+  const run = (ablation: Ablation) => {
+    const agent = createAgent(patches([1]));
+    const cfg = { ...defaultConfig(), ablation };
+    stepAgent(agent, patches([1]), cfg);
+    const lastX = agent.gazeX;
+    stepAgent(agent, patches([]), cfg);
+    return agent.gazeX === lastX;
+  };
+  assert.equal(run("dummy-memory"), true);
+  assert.equal(run("no-schema"), false);
+});
+
+test("record-only grades the attended patch even when the schema intends another focus", () => {
+  const agent = createAgent(patches([1, 5, 6]));
+  agent.attention.focusId = agent.tracks[0]!.id;
+  agent.focusHold = 2;
+  stepAgent(agent, patches([1, 5, 6]), { ...defaultConfig(), ablation: "record-only" });
+  assert.notEqual(agent.attention.intendedX, agent.attention.executedX);
+  assert.equal(agent.focusPrevId, agent.tracks[1]!.id);
+  assert.equal(agent.predictedObserved, true);
+});
+
+test("workspace competition and injected confidence change the schema's own decision", () => {
+  const run = (capacity: number, injectConfidence: boolean) => {
+    const ep = createAgent(patches([1, 6]));
+    ep.workspaceCapacity = capacity;
+    for (let i = 0; i < 3; i++) stepAgent(ep, patches([1, 6]), defaultConfig());
+    stepAgent(ep, patches([1]), { ...defaultConfig(), injectConfidence });
+    return ep;
+  };
+  const full = run(3, false);
+  const narrow = run(1, false);
+  assert.equal(narrow.tracks.filter((t) => t.inWorkspace).length, 1);
+  assert.notEqual(full.gazeX, narrow.gazeX);
+  const injected = run(3, true);
+  assert.ok(injected.tracks.every((t) =>
+    t.uncertainty < 0.05 && t.confidence > 0.95 && !t.conflict && t.reason === "none"));
+  assert.equal(injected.attention.influencesAction, true);
+  assert.equal(injected.attention.intendedX, injected.attention.executedX);
+  assert.notEqual(injected.gazeX, full.gazeX);
+});
+
+test("the verdict requires an advantage over the main controls and independent replay detection", () => {
+  const rows: BenchRow[] = ["full", "first-order", "record", "dummy", "replay"].map((id) => ({
+    id, label: id, detail: "", retention: 0, pair: 0, selfError: null, actionError: 0.05,
+  }));
+  rows[0]!.retention = 1;
+  rows[1]!.retention = 1;
+  assert.equal(assess(rows, 20).causal, "unsupported");
+  rows[0]!.pair = 1;
+  assert.equal(assess(rows, 20).causal, "mixed");
+  rows[4]!.actionError = 0.14;
+  assert.equal(assess(rows, 20).causal, "supported");
+  rows[3]!.retention = rows[3]!.pair = 1;
+  assert.equal(assess(rows, 20).causal, "mixed");
+});
