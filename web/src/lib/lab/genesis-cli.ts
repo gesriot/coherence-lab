@@ -5,8 +5,8 @@ import { genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
 import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
-// Participant rates are set after tuning on the frozen existence task.
-const selectedRates = { motion: 0.03, existence: 0.03 };
+// Selected on the frozen existence task using first-order runs 511–520 and evaluation seeds 2021–2040.
+const selectedRates = { motion: 0.1, existence: 0.1 };
 
 const runs = 30;
 const firstRun = 31;
