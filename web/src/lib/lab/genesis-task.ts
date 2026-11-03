@@ -22,3 +22,9 @@ export const genesisTask = {
   stabilityFloor: 0.85,
   existenceRates: [0.003, 0.01, 0.03, 0.1],
 } as const;
+
+export const experimentSeeds = {
+  tuning: { firstRun: 521, runs: 10, firstEvalSeed: 2041 },
+  comparison: { firstRun: 61, runs: 30, firstEvalSeed: 1041 },
+  evaluationCount: 20,
+} as const;

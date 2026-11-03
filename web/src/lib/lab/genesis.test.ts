@@ -1,6 +1,6 @@
 import { advanceWorld, hiddenByOccluder, makeWorld, scheduleOutdoorLosses } from "./world.ts";
 import { hashUnit } from "./math.ts";
-import { genesisTask } from "./genesis-task.ts";
+import { experimentSeeds, genesisTask } from "./genesis-task.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
@@ -383,6 +383,14 @@ test("the feasibility pipeline reproduces the grid choice, curves and final comp
   assert.equal(first.curves.get("oracle")!.at(-1)!.split!.length, 2);
   assert.deepEqual([...first.stability.keys()], [0.003, 0.01, 0.03, 0.1]);
   assert.deepEqual(run(), first);
+});
+
+test("the tuning and comparison seeds are frozen for the last-visible-frame metric", () => {
+  assert.deepEqual(experimentSeeds, {
+    tuning: { firstRun: 521, runs: 10, firstEvalSeed: 2041 },
+    comparison: { firstRun: 61, runs: 30, firstEvalSeed: 1041 },
+    evaluationCount: 20,
+  });
 });
 
 test("the task and oracle settings selected on the design seeds are frozen", () => {

@@ -1,4 +1,4 @@
-import { genesisTask } from "./genesis-task.ts";
+import { experimentSeeds, genesisTask } from "./genesis-task.ts";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "./agent.ts";
 import { generator, Learner, type Rates } from "./experience.ts";
 import { conditions, trainEpisode, type Condition, type Labels } from "./genesis-training.ts";
@@ -8,7 +8,7 @@ import { hiddenByOccluder } from "./world.ts";
 
 export const { checkpoints } = genesisTask;
 const { curriculum, ghostDelay } = genesisTask;
-const EVAL_SEEDS = 20;
+const EVAL_SEEDS = experimentSeeds.evaluationCount;
 export const tuningAreaUnits = (checkpoints.length - 1) * 2 * EVAL_SEEDS;
 
 function nearest<T extends { x: number; y: number }>(objects: T[], position: { x: number; y: number }): T {
@@ -69,7 +69,7 @@ export function evaluateDisappearance(models: Models, seed: number, cfg: LabConf
   return ep.agent.tracks.some((t) => t.id === id) ? "ghost" : "cleared";
 }
 
-export function evaluate(models: Models, ablation: Ablation, firstSeed: number, seeds = EVAL_SEEDS): Point {
+export function evaluate(models: Models, ablation: Ablation, firstSeed: number, seeds: number = EVAL_SEEDS): Point {
   let held = 0, clean = 0, untracked = 0, error = 0, predictions = 0;
   const cfg = { ...defaultConfig(), ablation };
   for (let seed = firstSeed; seed < firstSeed + seeds; seed++) {

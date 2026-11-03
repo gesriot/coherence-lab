@@ -1,16 +1,15 @@
 import { decimal } from "./bench.ts";
 import { controlCurve, controls, controlNames, permitsComparison, stableOracle, type Control } from "./feasibility.ts";
 import type { Rates } from "./experience.ts";
-import { genesisTask } from "./genesis-task.ts";
+import { experimentSeeds, genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
 import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
-// Selected on the frozen existence task using first-order runs 511–520 and evaluation seeds 2021–2040.
+// Obsolete rates from the previous disappearance metric, pending first-order tuning.
 const selectedRates = { motion: 0.1, existence: 0.1 };
 
-const runs = 30;
-const firstRun = 31;
-const evalSeed = 1021;
+const { runs, firstRun, firstEvalSeed } = experimentSeeds.comparison;
+const { evaluationCount } = experimentSeeds;
 const comparisonIds = ["full", "first-order", "no-protocol", "strong-first-order"] as const;
 type Id = Condition | Control | "participant-oracle";
 const experiments = new Map<Id, Point[][]>();
@@ -23,12 +22,12 @@ const label = (id: Id) => {
 };
 
 const oracleRuns = (rates: Rates) => Array.from({ length: runs }, (_, i) =>
-  controlCurve("oracle", firstRun + i, rates, checkpoints, evalSeed));
+  controlCurve("oracle", firstRun + i, rates, checkpoints, firstEvalSeed, evaluationCount));
 for (const id of controls) {
   if (id === "oracle") {
     experiments.set(id, oracleRuns(genesisTask.oracleRates));
   } else {
-    const fixed = controlCurve(id, firstRun, genesisTask.oracleRates, checkpoints, evalSeed);
+    const fixed = controlCurve(id, firstRun, genesisTask.oracleRates, checkpoints, firstEvalSeed, evaluationCount);
     experiments.set(id, Array.from({ length: runs }, () => fixed));
   }
 }
@@ -51,11 +50,13 @@ for (const id of controls) {
 for (const id of ["oracle", "participant-oracle"] as const) {
   const values = id === "oracle" ? measured.oracle : participantOracle;
   console.log(`${label(id)} · ${values.map((v) => decimal(v, 4)).join(" ")} · ${stableOracle(values) ? "устойчив" : "неустойчив"}`);
+  const below = curve(id).filter((run) => run.at(-1)!.accuracy < genesisTask.controlFloor).length;
+  console.log(`${label(id)} · прогонов с итоговой точностью ниже ${decimal(genesisTask.controlFloor, 1)}: ${below} из ${runs}`);
 }
 
 if (ready) {
   for (const id of comparisonIds) {
-    experiments.set(id, Array.from({ length: runs }, (_, i) => runTrial(id, firstRun + i, evalSeed, selectedRates)));
+    experiments.set(id, Array.from({ length: runs }, (_, i) => runTrial(id, firstRun + i, firstEvalSeed, selectedRates)));
   }
   const saturated = accuracy("full", 1).mean >= 0.9 && accuracy("first-order", 1).mean >= 0.9;
   console.log(saturated ? "Обучение слишком быстрое: задача не различает условия" : "Насыщения в точке 4 нет.");
@@ -63,7 +64,7 @@ if (ready) {
   console.log("Сравнение не интерпретируется: проверка выполнимости не пройдена.");
 }
 
-console.log(`Прогоны ${firstRun}–${firstRun + runs - 1}. Оценочные зёрна 1021–1040. Интервалы 95% по прогонам.`);
+console.log(`Прогоны ${firstRun}–${firstRun + runs - 1}. Оценочные зёрна ${firstEvalSeed}–${firstEvalSeed + evaluationCount - 1}. Интервалы 95% по прогонам.`);
 console.log(`Шаги обучения оракула: ${decimal(genesisTask.oracleRates.motion)} / ${decimal(genesisTask.oracleRates.existence)}. Участники: ${decimal(selectedRates.motion)} / ${decimal(selectedRates.existence)}.`);
 console.table(Array.from(experiments.keys()).flatMap((id) => checkpoints.map((n, i) => {
   const points = curve(id).map((r) => r[i]!);
