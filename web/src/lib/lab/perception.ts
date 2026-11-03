@@ -1,3 +1,4 @@
+import { features, hazard, motion, type Features, type Models } from "./learning.ts";
 import { WORLD, clamp, hueDelta, hypot, lerpHue, wrapHue } from "./math.ts";
 import { classify, extractBlobs, locate, type Location } from "./observe.ts";
 import type {
@@ -33,6 +34,7 @@ interface Decision {
 }
 
 export interface Agent {
+  learning?: Models;
   tracks: Track[];
   nextId: number;
   gazeX: number;
@@ -98,6 +100,14 @@ function emptyAttention(x: number, y: number, aperture: number): AttentionState 
   };
 }
 
+function setForecast(t: Track, models: Models, input: Features): void {
+  const [vx, vy] = motion(models, input);
+  const scale = MAX_TRACK_SPEED / Math.max(MAX_TRACK_SPEED, hypot(vx, vy));
+  t.forecastInput = input;
+  t.vx = vx * scale;
+  t.vy = vy * scale;
+}
+
 function newTrack(ep: Agent, blob: Blob): Track {
   const hue = wrapHue(blob.hue - ep.lightEstimate);
   const t: Track = {
@@ -126,6 +136,7 @@ function newTrack(ep: Agent, blob: Blob): Track {
       step: 1, x: blob.cx, y: blob.cy, cellWidth: 2 * ep.obsGaze.aperture / ep.grid,
     }],
   };
+  if (ep.learning) setForecast(t, ep.learning, features(t.motionSamples));
   finishTrack(t);
   return t;
 }
@@ -166,7 +177,7 @@ function agreementOf(tracks: Track[], blobs: Blob[]): Agreement {
   return "settled";
 }
 
-function predictMiss(prior: Track, obs: Observation): Track {
+export function predictMiss(prior: Track, obs: Observation, models?: Models): Track {
   const t: Track = {
     ...prior,
     x: prior.x + prior.vx,
@@ -201,11 +212,19 @@ function predictMiss(prior: Track, obs: Observation): Track {
     t.reason = "conflict";
     t.conflict = true;
   }
+  if (models) {
+    if (t.reason === "occlusion" || t.reason === "absence" || t.reason === "no-data") {
+      t.evidence = prior.evidence * (1 - hazard(models, t.reason));
+      t.uncertainty = clamp(prior.uncertainty + 0.08);
+    }
+    const last = prior.forecastInput!;
+    setForecast(t, models, [prior.vx, prior.vy, last[0], last[1], 1]);
+  }
   finishTrack(t);
   return t;
 }
 
-function matchRadius(prior: Track): number {
+export function matchRadius(prior: Track): number {
   return BASE_MATCH_RADIUS + prior.unseen * prior.velocitySpread;
 }
 
@@ -251,13 +270,14 @@ function matchTrack(ep: Agent, prior: Track, blob: Blob, obs: Observation): Trac
     flowError,
     radius: Math.sqrt(blob.area / Math.PI) * (2 * obs.aperture / obs.grid),
   };
+  if (ep.learning) setForecast(t, ep.learning, features(motionSamples));
   finishTrack(t);
   return t;
 }
 
 function perceive(ep: Agent, blobs: Blob[], obs: Observation, action: number, schemaOn: boolean): void {
   const priors = ep.tracks;
-  const misses = priors.map((t) => predictMiss(t, obs));
+  const misses = priors.map((t) => predictMiss(t, obs, ep.learning));
   const matches = priors.map((prior, i) => {
     const options = blobs.map((blob) => {
       if (hypot(blob.cx - misses[i]!.x, blob.cy - misses[i]!.y) > matchRadius(prior)) return null;
@@ -622,9 +642,10 @@ function selfPrediction(ep: Agent, decision: Decision): { observed: boolean; dro
   return { observed, drop };
 }
 
-export function createAgent(obs: Observation, ablation: Ablation = "full"): Agent {
+export function createAgent(obs: Observation, ablation: Ablation = "full", learning?: Models): Agent {
   const gaze = { x: obs.gazeX, y: obs.gazeY, aperture: obs.aperture };
   const ep: Agent = {
+    learning,
     tracks: [],
     nextId: 1,
     gazeX: gaze.x,

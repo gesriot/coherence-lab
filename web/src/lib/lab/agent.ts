@@ -1,3 +1,4 @@
+import type { Models } from "./learning.ts";
 import { hypot } from "./math.ts";
 import { createAgent, stepAgent, type Agent } from "./perception.ts";
 import { observe } from "./sensor.ts";
@@ -17,12 +18,12 @@ export interface Episode {
   configEcho: ViewState["configEcho"];
 }
 
-export function createEpisode(scenario: ScenarioId, seed: number, ablation: Ablation = "full"): Episode {
+export function createEpisode(scenario: ScenarioId, seed: number, ablation: Ablation = "full", learning?: Models): Episode {
   const world = makeWorld(scenario, seed);
   const gaze = initialGaze(scenario);
   const obs = observe(world, gaze.x, gaze.y, gaze.aperture);
   const ep: Episode = {
-    agent: createAgent(obs, ablation),
+    agent: createAgent(obs, ablation, learning),
     scenario,
     seed,
     world,

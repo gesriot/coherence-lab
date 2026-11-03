@@ -35,3 +35,67 @@ test("the disk disappears from the sensor at the scheduled step and remains in t
     }
   }
 });
+
+import { fitMotion, fitPermanence, freshModels, GapBook, hazard, motion, type Features } from "./learning.ts";
+import type { Track } from "./types.ts";
+import { matchRadius } from "./perception.ts";
+
+test("normalized motion learning converges on a constant displacement", () => {
+  const models = freshModels();
+  const input: Features = [1.5, -0.5, 1.5, -0.5, 1];
+  assert.deepEqual(motion(models, input), [0, 0]);
+  for (let i = 0; i < 500; i++) fitMotion(models, { input, target: [1.5, -0.5] }, 0.1);
+  assert.ok(Math.hypot(motion(models, input)[0] - 1.5, motion(models, input)[1] + 0.5) < 1e-8);
+});
+
+test("survival likelihood recovers cause-specific event rates", () => {
+  const models = freshModels();
+  for (let i = 0; i < 5000; i++) {
+    for (const [c, duration] of [["occlusion", 20], ["absence", 2], ["no-data", 5]] as const) {
+      fitPermanence(models, {
+        exposure: { occlusion: 0, absence: 0, "no-data": 0, [c]: duration }, last: c, found: false,
+      }, 0.01);
+    }
+  }
+  assert.ok(Math.abs(hazard(models, "occlusion") - 0.05) < 1e-6);
+  assert.ok(Math.abs(hazard(models, "absence") - 0.5) < 1e-6);
+  assert.ok(Math.abs(hazard(models, "no-data") - 0.2) < 1e-6);
+});
+
+test("gap outcomes use live bindings, retrospective births, timeout and episode censoring", () => {
+  const track = createEpisode("continuity", 1).agent.tracks[0]!;
+  const advance = (t: Track): Track => ({ ...t, boundBlob: null, unseen: t.unseen + 1, reason: "absence" });
+  const miss = advance(track);
+  for (const outcome of ["live", "birth", "timeout", "censored"]) {
+    const book = new GapBook();
+    assert.deepEqual(book.step(1, [track], [miss], advance, matchRadius), []);
+    if (outcome === "live") {
+      assert.equal(book.step(2, [miss], [track], advance, matchRadius)[0]!.found, true);
+      continue;
+    }
+    assert.deepEqual(book.step(2, [miss], [], advance, matchRadius), []);
+    for (let i = 3; i <= 31; i++) assert.deepEqual(book.step(i, [], [], advance, matchRadius), []);
+    if (outcome === "censored") continue;
+    const births = outcome === "birth" ? [{ ...track, id: 2, age: 1 }] : [];
+    const [record] = book.step(32, [], births, advance, matchRadius);
+    assert.equal(record!.found, outcome === "birth");
+    assert.equal(record!.exposure.absence, outcome === "birth" ? 31 : 32);
+  }
+});
+
+test("zero motion and equal initial hazards lose the target behind the wall", () => {
+  let losses = 0;
+  for (let seed = 1; seed <= 8; seed++) {
+    const ep = createEpisode("continuity", seed, "first-order", freshModels());
+    let hidden = false;
+    let exit = 0;
+    for (let i = 1; i <= 72; i++) {
+      stepEpisode(ep, { ...defaultConfig(), ablation: "first-order" });
+      const v = snapshot(ep, "first-order");
+      if (v.evaluator.objects[0]!.occluded) hidden = true;
+      else if (hidden && !exit) exit = i;
+      if (exit && i === exit + 1 && !v.evaluator.retained) losses++;
+    }
+  }
+  assert.ok(losses >= 3);
+});

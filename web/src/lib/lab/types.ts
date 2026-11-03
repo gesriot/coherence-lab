@@ -113,6 +113,7 @@ export interface Track {
   inWorkspace: boolean;
   radius: number;
   flowError: number;
+  forecastInput?: [number, number, number, number, number];
   velocitySpread: number;
   motionSamples: MotionSample[];
 }
