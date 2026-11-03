@@ -219,7 +219,7 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
       t.uncertainty = clamp(prior.uncertainty + 0.08);
     }
     const last = prior.forecastInput!;
-    setForecast(t, models, [prior.vx, prior.vy, last[0], last[1], 1]);
+    setForecast(t, models, [prior.vx, prior.vy, last[2], last[3], 1]);
   }
   finishTrack(t);
   return t;

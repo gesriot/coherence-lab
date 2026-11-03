@@ -20,12 +20,16 @@ export function freshModels(): Models {
 }
 
 export function features(samples: MotionSample[]): Features {
-  const displacement = (i: number): Vector => {
-    if (i < 1) return [0, 0];
-    const a = samples[i - 1]!, b = samples[i]!;
-    return [(b.x - a.x) / (b.step - a.step), (b.y - a.y) / (b.step - a.step)];
-  };
-  return [...displacement(samples.length - 1), ...displacement(samples.length - 2), 1];
+  if (samples.length < 2) return [0, 0, 0, 0, 1];
+  const first = samples[0]!;
+  const previous = samples[samples.length - 2]!;
+  const last = samples[samples.length - 1]!;
+  const recentSteps = last.step - previous.step;
+  const observedSteps = last.step - first.step;
+  return [
+    (last.x - previous.x) / recentSteps, (last.y - previous.y) / recentSteps,
+    (last.x - first.x) / observedSteps, (last.y - first.y) / observedSteps, 1,
+  ];
 }
 
 export function motion(models: Models, input: Features): Vector {

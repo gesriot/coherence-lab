@@ -97,15 +97,15 @@ export function evaluate(models: Models, ablation: Ablation, firstSeed: number, 
 
 export function trainingCurve<T>(
   condition: Condition, seed: number, rates: Rates, stages: readonly number[],
-  measure: (models: Models) => T,
+  measure: (models: Models, episode: number) => T,
 ): T[] {
   const learner = new Learner(rates, conditions[condition].selection, seed);
   const curve: T[] = [];
-  if (stages.includes(0)) curve.push(measure(learner.models));
+  if (stages.includes(0)) curve.push(measure(learner.models, 0));
   for (let episode = 1; episode <= stages[stages.length - 1]!; episode++) {
     const scenario = curriculum[(episode - 1) % curriculum.length]!;
     trainEpisode(learner, condition, scenario, 10000 + 100 * seed + episode, oracleLabels);
-    if (stages.includes(episode)) curve.push(measure(learner.models));
+    if (stages.includes(episode)) curve.push(measure(learner.models, episode));
   }
   return curve;
 }

@@ -36,9 +36,9 @@ test("the disk disappears from the sensor at the scheduled step and remains in t
   }
 });
 
-import { fitMotion, fitPermanence, freshModels, GapBook, hazard, motion, type Features } from "./learning.ts";
+import { features, fitMotion, fitPermanence, freshModels, GapBook, hazard, motion, type Features } from "./learning.ts";
 import type { Track } from "./types.ts";
-import { matchRadius } from "./perception.ts";
+import { matchRadius, predictMiss } from "./perception.ts";
 
 test("normalized motion learning converges on a constant displacement", () => {
   const models = freshModels();
@@ -203,5 +203,36 @@ test("hand-set controls are evaluated without learning or parameter drift", () =
     assert.deepEqual(curve[0], curve[1]);
     assert.deepEqual(curve[1]!.weights, expected.weights.flat());
     assert.deepEqual(curve[1]!.logits, Object.values(expected.logits));
+  }
+});
+
+test("motion features use elapsed time for both the latest observation and the long baseline", () => {
+  const samples = [
+    { step: 1, x: 3, y: 6, cellWidth: 3 },
+    { step: 5, x: 9, y: 6, cellWidth: 3 },
+    { step: 7, x: 15, y: 0, cellWidth: 3 },
+  ];
+  assert.deepEqual(features(samples.slice(0, 1)), [0, 0, 0, 0, 1]);
+  assert.deepEqual(features(samples), [3, -3, 2, -1, 1]);
+});
+
+test("missing observations feed back displacement but preserve the last observed baseline", () => {
+  const models = freshModels();
+  const ep = createEpisode("continuity", 3001, "first-order", models);
+  const obs = { gazeX: 90, gazeY: 90, aperture: 2, grid: 1, cells: [{ hue: 0, saturation: 0, lightness: 0 }] };
+  const track = ep.agent.tracks[0]!;
+  track.forecastInput = [3, -3, 2, -1, 1];
+  track.vx = 1;
+  track.vy = -2;
+  const first = predictMiss(track, obs, models);
+  assert.deepEqual(first.forecastInput, [1, -2, 2, -1, 1]);
+  assert.deepEqual(predictMiss(first, obs, models).forecastInput, [0, 0, 2, -1, 1]);
+});
+
+test("reference controls predict the measured baseline without a scenario-specific offset", () => {
+  for (const id of ["keep-all", "ideal"] as const) {
+    const models = referenceModel(id);
+    assert.deepEqual(models.weights, [[0, 0, 1, 0, 0], [0, 0, 0, 1, 0]]);
+    assert.deepEqual(motion(models, [1, 2, -3, 4, 1]), [-3, 4]);
   }
 });
