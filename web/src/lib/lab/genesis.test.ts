@@ -99,3 +99,58 @@ test("zero motion and equal initial hazards lose the target behind the wall", ()
   }
   assert.ok(losses >= 3);
 });
+
+import { generator, Learner, Replay, type Selection } from "./experience.ts";
+import { conditions, trainEpisode, type Condition } from "./genesis-training.ts";
+
+test("bounded experience is FIFO and attention admits only executed-focus experience", () => {
+  const learner = new Learner({ motion: 0.1, permanence: 0.01 }, "attention", 1);
+  const example = { input: [1, 0, 1, 0, 1] as Features, target: [1, 0] as [number, number] };
+  const gap = { found: true, last: "absence" as const, exposure: { absence: 1, occlusion: 0, "no-data": 0 } };
+  learner.rememberMotion(example, null);
+  learner.rememberGap(gap, null);
+  assert.equal(learner.movements.entries.length + learner.gaps.entries.length, 0);
+  for (let i = 0; i < 300; i++) {
+    learner.rememberMotion({ ...example, target: [i, 0] }, 0);
+    learner.rememberGap({ ...gap, exposure: { ...gap.exposure, absence: i + 1 } }, 0.3);
+  }
+  assert.equal(learner.movements.entries.length, 256);
+  assert.equal(learner.movements.entries[0]!.value.target[0], 44);
+  assert.equal(learner.gaps.entries.length, 32);
+  assert.equal(learner.gaps.entries[0]!.value.exposure.absence, 269);
+});
+
+test("replay draws are reproducible and proportional to insertion priorities", () => {
+  const replay = new Replay<number>(2);
+  replay.add(0, 1);
+  replay.add(1, 3);
+  const sample = () => {
+    const random = generator(3);
+    return Array.from({ length: 10000 }, () => replay.sample(random, false));
+  };
+  const draws = sample();
+  assert.deepEqual(draws, sample());
+  assert.ok(Math.abs(draws.filter((x) => x === 1).length / draws.length - 0.75) < 0.02);
+});
+
+test("every nonempty memory receives exactly one update per training step", () => {
+  for (const selection of ["uniform", "attention", "error"] as Selection[]) {
+    const learner = new Learner({ motion: 0.1, permanence: 0.01 }, selection, 3);
+    learner.update();
+    assert.deepEqual(learner.updates, { motion: 0, permanence: 0 });
+    learner.rememberMotion({ input: [0, 0, 0, 0, 1], target: [0, 1] }, 0);
+    learner.update();
+    learner.rememberGap({ exposure: { absence: 1, occlusion: 0, "no-data": 0 }, last: "absence", found: false }, 0);
+    learner.update();
+    assert.deepEqual(learner.updates, { motion: 2, permanence: 1 });
+  }
+});
+
+test("only the oracle training condition requests privileged labels", () => {
+  for (const condition of Object.keys(conditions) as Condition[]) {
+    const learner = new Learner({ motion: 0.1, permanence: 0.01 }, conditions[condition].selection, 1);
+    const run = () => trainEpisode(learner, condition, "vanish", 1, () => { throw Error("label hook"); });
+    if (condition === "oracle") assert.throws(run, /label hook/);
+    else run();
+  }
+});

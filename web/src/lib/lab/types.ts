@@ -126,6 +126,7 @@ export interface AttentionState {
   focusId: number | null;
   reason: AttentionReason;
   executedReason: AttentionReason;
+  executedFocusId: number | null;
   agreement: Agreement;
   intendedX: number;
   intendedY: number;
