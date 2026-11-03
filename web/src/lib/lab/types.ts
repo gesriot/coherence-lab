@@ -16,7 +16,7 @@ export type ScenarioId = "continuity" | "binding" | "conflict" | "nursery";
 
 export type Agreement = "settled" | "competing" | "underdetermined";
 
-export type Expectation = "surface" | "occluder" | "empty" | "outside";
+export type Expectation = "surface" | "occluder" | "empty";
 
 export type AttentionReason =
   | "conflict"
@@ -61,7 +61,8 @@ export interface World {
 }
 
 export interface Cell {
-  kind: "empty" | "surface" | "occluder";
+  saturation: number;
+  lightness: number;
   hue: number;
 }
 
@@ -72,8 +73,6 @@ export interface Observation {
   aperture: number;
   grid: number;
   cells: Cell[];
-  capturedGazeX: number;
-  capturedGazeY: number;
 }
 
 export interface Blob {
@@ -104,6 +103,7 @@ export interface Track {
   boundBlob: number | null;
   conflict: boolean;
   inWorkspace: boolean;
+  radius: number;
   flowError: number;
 }
 

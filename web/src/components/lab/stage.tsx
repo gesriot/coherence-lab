@@ -67,30 +67,30 @@ export function Stage({ view, showTruth, showHypotheses, onPick }: StageProps) {
       }
       ctx.globalAlpha = 1;
 
-      const occ = view.occluder;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(X(occ.x), Y(occ.y), occ.w * scale, occ.h * scale);
-      ctx.clip();
-      ctx.fillStyle = muted;
-      ctx.globalAlpha = 0.28;
-      ctx.fillRect(X(occ.x), Y(occ.y), occ.w * scale, occ.h * scale);
-      ctx.globalAlpha = 0.55;
-      ctx.strokeStyle = fg;
-      ctx.beginPath();
-      const span = occ.w * scale + occ.h * scale;
-      for (let i = -span; i < span; i += 8) {
-        ctx.moveTo(X(occ.x) + i, Y(occ.y));
-        ctx.lineTo(X(occ.x) + i + occ.h * scale, Y(occ.y) + occ.h * scale);
-      }
-      ctx.stroke();
-      ctx.restore();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(X(occ.x) + 0.5, Y(occ.y) + 0.5, occ.w * scale, occ.h * scale);
-
       if (showTruth) {
+        const occ = view.occluder;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(X(occ.x), Y(occ.y), occ.w * scale, occ.h * scale);
+        ctx.clip();
+        ctx.fillStyle = muted;
+        ctx.globalAlpha = 0.28;
+        ctx.fillRect(X(occ.x), Y(occ.y), occ.w * scale, occ.h * scale);
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = fg;
+        ctx.beginPath();
+        const span = occ.w * scale + occ.h * scale;
+        for (let i = -span; i < span; i += 8) {
+          ctx.moveTo(X(occ.x) + i, Y(occ.y));
+          ctx.lineTo(X(occ.x) + i + occ.h * scale, Y(occ.y) + occ.h * scale);
+        }
+        ctx.stroke();
+        ctx.restore();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(X(occ.x) + 0.5, Y(occ.y) + 0.5, occ.w * scale, occ.h * scale);
+
         for (const object of view.objects) {
           const hidden = view.evaluator.objects.find((item) => item.id === object.id)?.occluded;
           ctx.save();
@@ -127,11 +127,10 @@ export function Stage({ view, showTruth, showHypotheses, onPick }: StageProps) {
         for (let row = 0; row < n; row++) {
           for (let col = 0; col < n; col++) {
             const sample = view.cells[row * n + col];
-            if (!sample || sample.kind === "empty") continue;
+            if (!sample) continue;
             const wx = gaze.x - gaze.aperture + col * cell;
             const wy = gaze.y - gaze.aperture + row * cell;
-            ctx.fillStyle =
-              sample.kind === "occluder" ? "#3a342c" : `hsl(${sample.hue} 70% 50%)`;
+            ctx.fillStyle = `hsl(${sample.hue} ${sample.saturation}% ${sample.lightness}%)`;
             ctx.fillRect(X(wx), Y(wy), Math.ceil(cell * scale), Math.ceil(cell * scale));
           }
         }

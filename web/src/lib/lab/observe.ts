@@ -1,65 +1,9 @@
-import { WORLD, hueNoise, wrapHue } from "./math.ts";
-import type { Blob, Cell, Observation, World } from "./types.ts";
-import { contains, hiddenByOccluder } from "./world.ts";
+import { wrapHue } from "./math.ts";
+import type { Blob, Cell, Expectation, Observation } from "./types.ts";
 
-const GRID = 12;
-
-function sample(world: World, x: number, y: number, i: number): Cell {
-  if (x < 0 || y < 0 || x > WORLD || y > WORLD) {
-    return { kind: "empty", hue: 90 };
-  }
-  const occ = world.occluder;
-  if (x >= occ.x && x <= occ.x + occ.w && y >= occ.y && y <= occ.y + occ.h) {
-    return { kind: "occluder", hue: 42 };
-  }
-  for (let k = world.objects.length - 1; k >= 0; k--) {
-    const o = world.objects[k]!;
-    if (hiddenByOccluder(o, occ)) continue;
-    if (!contains(o, x, y)) continue;
-    const hue = wrapHue(o.hue + world.light + hueNoise(world.seed, world.t, i) * world.noise);
-    return { kind: "surface", hue };
-  }
-  return { kind: "empty", hue: 110 };
-}
-
-export function observe(
-  world: World,
-  gazeX: number,
-  gazeY: number,
-  aperture: number,
-): Observation {
-  const cells: Cell[] = [];
-  const cell = (aperture * 2) / GRID;
-  const left = gazeX - aperture;
-  const top = gazeY - aperture;
-  for (let r = 0; r < GRID; r++) {
-    for (let c = 0; c < GRID; c++) {
-      const x = left + (c + 0.5) * cell;
-      const y = top + (r + 0.5) * cell;
-      cells.push(sample(world, x, y, r * GRID + c));
-    }
-  }
-  return {
-    gazeX,
-    gazeY,
-    aperture,
-    grid: GRID,
-    cells,
-    capturedGazeX: gazeX,
-    capturedGazeY: gazeY,
-  };
-}
-
-/** Replay keeps the captured cells but lets the agent interpret them at a new gaze. */
-export function reinterpret(source: Observation, gazeX: number, gazeY: number, aperture: number): Observation {
-  return {
-    ...source,
-    cells: source.cells,
-    grid: source.grid,
-    gazeX,
-    gazeY,
-    aperture,
-  };
+export function classify(cell: Cell): Expectation {
+  if (cell.lightness < 15) return "empty";
+  return cell.saturation < 20 ? "occluder" : "surface";
 }
 
 export function extractBlobs(obs: Observation): Blob[] {
@@ -76,7 +20,7 @@ export function extractBlobs(obs: Observation): Blob[] {
   };
 
   for (let i = 0; i < seen.length; i++) {
-    if (seen[i] || obs.cells[i]!.kind !== "surface") continue;
+    if (seen[i] || classify(obs.cells[i]!) !== "surface") continue;
     const stack = [i];
     seen[i] = 1;
     const members: number[] = [];
@@ -95,7 +39,7 @@ export function extractBlobs(obs: Observation): Blob[] {
       for (const nb of neighbors) {
         if (nb < 0 || seen[nb]) continue;
         const cellData = obs.cells[nb]!;
-        if (cellData.kind !== "surface" || !hueClose(seedHue, cellData.hue)) continue;
+        if (classify(cellData) !== "surface" || !hueClose(seedHue, cellData.hue)) continue;
         seen[nb] = 1;
         stack.push(nb);
       }
@@ -138,7 +82,7 @@ export function extractBlobs(obs: Observation): Blob[] {
 
 export type Location =
   | { status: "outside" }
-  | { status: "cell"; kind: Cell["kind"]; hue: number };
+  | { status: "cell"; kind: Expectation; hue: number };
 
 export function locate(obs: Observation, x: number, y: number): Location {
   const half = obs.aperture;
@@ -151,5 +95,5 @@ export function locate(obs: Observation, x: number, y: number): Location {
   const row = Math.floor((y - (obs.gazeY - half)) / cell);
   if (col < 0 || row < 0 || col >= n || row >= n) return { status: "outside" };
   const found = obs.cells[row * n + col]!;
-  return { status: "cell", kind: found.kind, hue: found.hue };
+  return { status: "cell", kind: classify(found), hue: found.hue };
 }

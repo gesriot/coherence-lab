@@ -340,10 +340,8 @@ export function LabApp() {
                 {view.cells.map((cell, index) => (
                   <div
                     key={index}
-                    className={
-                      cell.kind === "empty" ? "aspect-square bg-bg" : cell.kind === "occluder" ? "aspect-square bg-line" : "aspect-square"
-                    }
-                    style={cell.kind === "surface" ? { background: `hsl(${cell.hue} 70% 50%)` } : undefined}
+                    className="aspect-square"
+                    style={{ background: `hsl(${cell.hue} ${cell.saturation}% ${cell.lightness}%)` }}
                   />
                 ))}
               </div>

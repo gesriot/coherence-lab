@@ -14,8 +14,8 @@ import { advanceWorld, hiddenByOccluder, makeWorld } from "./world.ts";
 
 test("connected reds across zero have a red circular mean", () => {
   const blobs = extractBlobs({
-    grid: 2, aperture: 1, gazeX: 0, gazeY: 0, capturedGazeX: 0, capturedGazeY: 0,
-    cells: [355, 5, 355, 5].map((hue) => ({ hue, kind: "surface" })),
+    grid: 2, aperture: 1, gazeX: 0, gazeY: 0,
+    cells: [355, 5, 355, 5].map((hue) => ({ hue, saturation: 70, lightness: 50 })),
   });
   assert.equal(blobs.length, 1);
   assert.ok(hueDelta(blobs[0]!.hue, 0) < 1e-9);
@@ -24,9 +24,9 @@ test("connected reds across zero have a red circular mean", () => {
 test("revisiting a frame does not add evidence", () => {
   const run = (budget: number) => {
     const ep = createEpisode("continuity", 4);
-    ep.iterationBudget = budget;
+    ep.agent.iterationBudget = budget;
     stepEpisode(ep, defaultConfig());
-    return ep.tracks[0]!;
+    return ep.agent.tracks[0]!;
   };
   const once = run(1);
   const repeated = run(4);
@@ -66,4 +66,30 @@ test("equal seeds reproduce the entire episode", () => {
     return ep;
   };
   assert.deepEqual(run(), run());
+});
+
+import { classify } from "./observe.ts";
+import { createAgent, stepAgent } from "./perception.ts";
+
+test("a replay frame contains only raw pixels and is graded against the previous command", () => {
+  const ep = createEpisode("continuity", 3);
+  for (let i = 0; i < 8; i++) stepEpisode(ep, defaultConfig());
+  const guesses = [...ep.agent.guesses];
+  const frame = ep.recording[0]!;
+  assert.deepEqual(Object.keys(frame[0]!).sort(), ["hue", "lightness", "saturation"]);
+  const expected = frame.filter((cell, i) => classify(cell) !== guesses[i]).length / frame.length;
+  stepEpisode(ep, { ...defaultConfig(), replay: true });
+  assert.deepEqual(ep.agent.cells, frame);
+  assert.equal(guesses.length, frame.length);
+  assert.equal(ep.agent.energy.action, expected);
+});
+
+test("the next retinal forecast projects an observed wall into the commanded window", () => {
+  const wall = { hue: 0, saturation: 0, lightness: 40 };
+  const dark = { hue: 0, saturation: 0, lightness: 6 };
+  const obs = { gazeX: 50, gazeY: 50, aperture: 4, grid: 2, cells: [dark, wall, dark, wall] };
+  const agent = createAgent(obs);
+  stepAgent(agent, obs, { ...defaultConfig(), pinGaze: true, pinX: 54, pinY: 50 });
+  assert.deepEqual(agent.guesses, ["occluder", "empty", "occluder", "empty"]);
+  assert.equal(agent.energy.action, 0);
 });

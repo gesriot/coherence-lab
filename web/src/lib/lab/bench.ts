@@ -77,7 +77,7 @@ function meanAction(ablation: Ablation, seed: number, replay: boolean): number |
   const views = roll("continuity", ablation, seed, 40, (_ep, i, cfg) => {
     if (replay && i >= 14) cfg.replay = true;
   });
-  const slice = replay ? views.slice(16) : views.slice(4, 14);
+  const slice = views.slice(16);
   return mean(slice.map((v) => v.energy.action));
 }
 
