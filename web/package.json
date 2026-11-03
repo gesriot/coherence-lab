@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "bench": "node src/lib/lab/bench-cli.ts",
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {

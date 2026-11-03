@@ -1,6 +1,6 @@
-import { WORLD, hueNoise, wrapHue } from "./math";
-import type { Blob, Cell, Observation, World } from "./types";
-import { contains, hiddenByOccluder } from "./world";
+import { WORLD, hueNoise, wrapHue } from "./math.ts";
+import type { Blob, Cell, Observation, World } from "./types.ts";
+import { contains, hiddenByOccluder } from "./world.ts";
 
 const GRID = 12;
 

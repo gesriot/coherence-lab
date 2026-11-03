@@ -1,5 +1,5 @@
-import { clamp, hueDelta, hypot, lerpHue, wrapHue } from "./math";
-import { extractBlobs, locate, observe, reinterpret, type Location } from "./observe";
+import { clamp, hueDelta, hypot, lerpHue, wrapHue } from "./math.ts";
+import { extractBlobs, locate, observe, reinterpret, type Location } from "./observe.ts";
 import type {
   Ablation,
   Agreement,
@@ -12,8 +12,8 @@ import type {
   ScenarioId,
   Track,
   ViewState,
-} from "./types";
-import { advanceWorld, hiddenByOccluder, initialGaze, makeWorld } from "./world";
+} from "./types.ts";
+import { advanceWorld, hiddenByOccluder, initialGaze, makeWorld } from "./world.ts";
 
 const BUDGET = 4;
 const WORKSPACE = 3;

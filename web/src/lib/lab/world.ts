@@ -1,5 +1,5 @@
-import { WORLD, wrapHue } from "./math";
-import type { Occluder, ScenarioId, Shape, SimObject, World } from "./types";
+import { WORLD, wrapHue } from "./math.ts";
+import type { Occluder, ScenarioId, Shape, SimObject, World } from "./types.ts";
 
 function obj(
   id: string,

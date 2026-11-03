@@ -1,5 +1,5 @@
-import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "./agent";
-import type { Ablation, LabConfig, ScenarioId } from "./types";
+import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "./agent.ts";
+import type { Ablation, LabConfig, ScenarioId } from "./types.ts";
 
 export interface BenchRow {
   id: string;
@@ -12,6 +12,7 @@ export interface BenchRow {
 }
 
 export interface BenchReport {
+  configurations: number;
   rows: BenchRow[];
   causal: "supported" | "unsupported" | "mixed";
   summary: string;
@@ -151,6 +152,7 @@ export function runBench(): BenchReport {
     : "На этих семенах преимущество модели внимания не воспроизвелось. Стенд это показывает, а не прячет.";
 
   return {
+    configurations: SEEDS.length,
     rows,
     causal: couplingBreaks && holdsIdentity ? causal : holdsIdentity ? "mixed" : "unsupported",
     summary: couplingBreaks
