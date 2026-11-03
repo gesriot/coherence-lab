@@ -1,5 +1,6 @@
 import { createEpisode, defaultConfig, stepEpisode, type Episode } from "./agent.ts";
 import { Learner, type Selection } from "./experience.ts";
+import { scheduleOutdoorLosses } from "./world.ts";
 import { GapBook, type ClosedGap, type Vector } from "./learning.ts";
 import { matchRadius, predictMiss } from "./perception.ts";
 import type { Ablation, Observation, ScenarioId, Track } from "./types.ts";
@@ -26,6 +27,7 @@ export function trainEpisode(
 ): void {
   const ablation = conditions[condition].gaze;
   const ep = createEpisode(scenario, seed, ablation, learner.models);
+  if (scenario === "nursery") scheduleOutdoorLosses(ep.world);
   const labels = condition === "oracle" ? oracleHook(ep) : null;
   const cfg = { ...defaultConfig(), ablation };
   const book = new GapBook();

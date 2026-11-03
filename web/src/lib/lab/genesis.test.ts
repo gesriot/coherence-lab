@@ -236,3 +236,23 @@ test("reference controls predict the measured baseline without a scenario-specif
     assert.deepEqual(motion(models, [1, 2, -3, 4, 1]), [-3, 4]);
   }
 });
+
+test("confirmed absence requires three uninterrupted observations of the whole empty disk", () => {
+  const models = freshModels();
+  const ep = createEpisode("continuity", 3001, "first-order", models);
+  const track = ep.agent.tracks[0]!;
+  const obs = { gazeX: track.x, gazeY: track.y, aperture: 12, grid: 12,
+    cells: Array.from({ length: 144 }, () => ({ hue: 0, saturation: 0, lightness: 0 })),
+  };
+  let missed = predictMiss(track, obs, models);
+  assert.equal(missed.reason, "no-data");
+  missed = predictMiss(missed, obs, models);
+  assert.equal(missed.reason, "no-data");
+  // The center remains visible, but the right edge of the disk leaves the window.
+  missed = predictMiss(missed, { ...obs, gazeX: track.x - 12 + track.radius / 2 }, models);
+  assert.equal(missed.emptyViews, 0);
+  for (let i = 1; i <= 3; i++) {
+    missed = predictMiss(missed, obs, models);
+    assert.equal(missed.reason, i === 3 ? "absence" : "no-data");
+  }
+});

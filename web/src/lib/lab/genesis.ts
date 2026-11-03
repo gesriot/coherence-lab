@@ -5,9 +5,10 @@ import { hazard, type Models } from "./learning.ts";
 import type { Ablation, ScenarioId } from "./types.ts";
 import { hiddenByOccluder } from "./world.ts";
 
-export const checkpoints = [0, 4, 8, 16, 32] as const;
-const curriculum: ScenarioId[] = ["continuity", "vanish", "binding", "nursery"];
+export const checkpoints = [0, 4, 8, 16, 32, 64] as const;
+const curriculum: ScenarioId[] = ["continuity", "vanish", "binding", "nursery", "continuity", "binding", "nursery"];
 const EVAL_SEEDS = 20;
+const GHOST_DELAY = 20;
 
 function nearest<T extends { x: number; y: number }>(objects: T[], position: { x: number; y: number }): T {
   let best = objects[0]!, distance = Infinity;
@@ -79,13 +80,13 @@ export function evaluate(models: Models, ablation: Ablation, firstSeed: number, 
     const vanish = createEpisode("vanish", seed, ablation, models);
     const at = vanish.world.objects[0]!.vanishAt!;
     let id: number | null = null;
-    for (let step = 1; step <= 40; step++) {
+    for (let step = 1; step <= Math.max(40, at + GHOST_DELAY); step++) {
       stepEpisode(vanish, cfg);
       if (step === at) {
         id = snapshot(vanish, ablation).evaluator.objects[0]!.nearestTrack;
         if (id == null) untracked++;
       }
-      if (step === at + 8 && id != null && !vanish.agent.tracks.some((t) => t.id === id)) clean++;
+      if (step === at + GHOST_DELAY && id != null && !vanish.agent.tracks.some((t) => t.id === id)) clean++;
     }
   }
   return {

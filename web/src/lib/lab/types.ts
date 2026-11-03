@@ -107,6 +107,7 @@ export interface Track {
   source: SourceKind;
   reason: UncertaintyReason;
   unseen: number;
+  emptyViews?: number;
   age: number;
   boundBlob: number | null;
   conflict: boolean;

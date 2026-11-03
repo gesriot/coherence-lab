@@ -150,3 +150,17 @@ export function advanceWorld(world: World): void {
 export function apparentHue(intrinsic: number, light: number): number {
   return wrapHue(intrinsic + light);
 }
+
+/** Schedule permanent losses outdoors for training only, independent of the agent's gaze. */
+export function scheduleOutdoorLosses(world: World): void {
+  const preview = { ...world, objects: world.objects.map((o) => ({ ...o })) };
+  const earliest = world.objects.map((_, i) => 12 + Math.floor(24 * hashUnit(world.seed * 3 + i)));
+  for (let t = 1; t <= 80; t++) {
+    advanceWorld(preview);
+    for (const [i, object] of world.objects.entries()) {
+      if (object.vanishAt == null && t >= earliest[i]! && !hiddenByOccluder(preview.objects[i]!, world.occluder)) {
+        object.vanishAt = t;
+      }
+    }
+  }
+}

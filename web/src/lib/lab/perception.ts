@@ -162,6 +162,27 @@ function explainMiss(obs: Observation, x: number, y: number): Location {
   return here;
 }
 
+/** Confirm empty space only when all retinal cells intersecting the predicted disk are empty. */
+function observedEmptyDisk(obs: Observation, track: Track): boolean {
+  const { x, y, radius } = track;
+  if (Math.abs(x - obs.gazeX) + radius > obs.aperture ||
+      Math.abs(y - obs.gazeY) + radius > obs.aperture) return false;
+  const size = 2 * obs.aperture / obs.grid;
+  const left = obs.gazeX - obs.aperture, top = obs.gazeY - obs.aperture;
+  const col0 = Math.max(0, Math.floor((x - radius - left) / size));
+  const row0 = Math.max(0, Math.floor((y - radius - top) / size));
+  const col1 = Math.min(obs.grid - 1, Math.floor((x + radius - left) / size));
+  const row1 = Math.min(obs.grid - 1, Math.floor((y + radius - top) / size));
+  for (let row = row0; row <= row1; row++) {
+    for (let col = col0; col <= col1; col++) {
+      const dx = Math.max(0, Math.abs(left + (col + 0.5) * size - x) - size / 2);
+      const dy = Math.max(0, Math.abs(top + (row + 0.5) * size - y) - size / 2);
+      if (dx * dx + dy * dy <= radius * radius && classify(obs.cells[row * obs.grid + col]!) !== "empty") return false;
+    }
+  }
+  return true;
+}
+
 function finishTrack(t: Track): void {
   const src =
     t.source === "remembered" ? 0.55 : t.source === "predicted" ? 0.78 : t.source === "mixed" ? 0.7 : 1;
@@ -189,7 +210,11 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
   };
   t.unseen += 1;
   const loc = explainMiss(obs, t.x, t.y);
-  if (loc.status === "outside") {
+  if (models) {
+    const empty = loc.status === "cell" && loc.kind === "empty" && observedEmptyDisk(obs, t);
+    t.emptyViews = empty ? (prior.boundBlob == null ? prior.emptyViews ?? 0 : 0) + 1 : 0;
+  }
+  if (loc.status === "outside" || (models && loc.kind === "empty" && t.emptyViews! < 3)) {
     t.source = t.unseen > 10 ? "remembered" : "predicted";
     t.uncertainty = clamp(t.uncertainty + 0.08);
     t.evidence = clamp(t.evidence - 0.03);
@@ -216,7 +241,7 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
   if (models) {
     if (t.reason === "occlusion" || t.reason === "absence" || t.reason === "no-data") {
       t.evidence = prior.evidence * (1 - hazard(models, t.reason));
-      t.uncertainty = clamp(prior.uncertainty + 0.08);
+      t.uncertainty = clamp(prior.uncertainty + 0.03);
     }
     const last = prior.forecastInput!;
     setForecast(t, models, [prior.vx, prior.vy, last[2], last[3], 1]);
