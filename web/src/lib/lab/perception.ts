@@ -40,11 +40,11 @@ export interface Agent {
   energy: EnergyBreakdown;
   guesses: Expectation[];
   wallMap: Uint8Array;
-  prevU: Record<number, number>;
   focusPrevId: number | null;
   predictedDrop: number;
   predictedObserved: boolean;
   selfError: number | null;
+  weights: typeof DEFAULT_WEIGHTS;
   iterationBudget: number;
   iterationsUsed: number;
   energyTrace: number[];
@@ -92,12 +92,10 @@ function emptyAttention(x: number, y: number, aperture: number): AttentionState 
   };
 }
 
-function spawnFromBlob(ep: Agent, blob: Blob): void {
-  if (ep.tracks.length >= MAX_TRACKS) return;
-  if (ep.tracks.some((t) => hypot(t.x - blob.cx, t.y - blob.cy) < 9)) return;
+function newTrack(ep: Agent, blob: Blob): Track {
   const hue = wrapHue(blob.hue - ep.lightEstimate);
-  ep.tracks.push({
-    id: ep.nextId++,
+  const t: Track = {
+    id: ep.nextId + blob.index,
     x: blob.cx,
     y: blob.cy,
     vx: 0,
@@ -111,13 +109,15 @@ function spawnFromBlob(ep: Agent, blob: Blob): void {
     source: "observed",
     reason: "none",
     unseen: 0,
-    age: 0,
+    age: 1,
     boundBlob: blob.index,
     conflict: false,
     inWorkspace: false,
     radius: Math.sqrt(blob.area / Math.PI) * (2 * ep.obsGaze.aperture / ep.grid),
     flowError: 0,
-  });
+  };
+  finishTrack(t);
+  return t;
 }
 
 function explainMiss(obs: Observation, x: number, y: number): Location {
@@ -156,145 +156,178 @@ function agreementOf(tracks: Track[], blobs: Blob[]): Agreement {
   return "settled";
 }
 
-function perceive(ep: Agent, blobs: Blob[], obs: Observation): void {
-  const trace: number[] = [];
-  const origin = new Map<number, { x: number; y: number; vx: number; vy: number }>();
-  for (const t of ep.tracks) {
-    origin.set(t.id, { x: t.x, y: t.y, vx: t.vx, vy: t.vy });
-    t.boundBlob = null;
-    t.conflict = false;
-    t.x += t.vx;
-    t.y += t.vy;
+function predictMiss(prior: Track, obs: Observation): Track {
+  const t: Track = {
+    ...prior,
+    x: prior.x + prior.vx,
+    y: prior.y + prior.vy,
+    age: prior.age + 1,
+    conflict: false,
+    boundBlob: null,
+  };
+  t.unseen += 1;
+  const loc = explainMiss(obs, t.x, t.y);
+  if (loc.status === "outside") {
+    t.source = t.unseen > 10 ? "imagined" : "predicted";
+    t.uncertainty = clamp(t.uncertainty + 0.08);
+    t.evidence = clamp(t.evidence - 0.03);
+    t.reason = "no-data";
+    t.prediction = clamp(t.prediction * 0.94);
+  } else if (loc.kind === "occluder") {
+    t.source = "predicted";
+    t.uncertainty = clamp(t.uncertainty + 0.02);
+    t.evidence = clamp(t.evidence - 0.005);
+    t.reason = "occlusion";
+    t.prediction = Math.max(t.prediction, 0.55);
+  } else if (loc.kind === "empty") {
+    t.source = "predicted";
+    t.uncertainty = clamp(t.uncertainty + 0.16);
+    t.evidence = clamp(t.evidence * 0.72);
+    t.reason = "absence";
+    t.prediction = clamp(t.prediction * 0.65);
+  } else {
+    t.source = "mixed";
+    t.uncertainty = clamp(t.uncertainty + 0.06);
+    t.reason = "conflict";
+    t.conflict = true;
   }
-  const sampled = new Set<number>();
+  finishTrack(t);
+  return t;
+}
 
-  let used = 0;
+/** Fixed frame priors: a different binding always starts from the same evidence. */
+function matchTrack(ep: Agent, prior: Track, blob: Blob, obs: Observation): Track {
+  const dx = blob.cx - prior.x;
+  const dy = blob.cy - prior.y;
+  const flowError = hypot(dx - prior.vx, dy - prior.vy);
+  const hueError = hueDelta(prior.hue + ep.lightEstimate, blob.hue);
+  const mismatch = clamp((flowError / 18 * 1.2 + hueError / 180 * 0.55
+    + Math.abs(prior.fill - blob.fill) * 0.2) / 1.28);
+  const vx = prior.vx * 0.35 + dx * 0.65;
+  const vy = prior.vy * 0.35 + dy * 0.65;
+  const scale = 3.2 / Math.max(3.2, hypot(vx, vy));
+  const t: Track = {
+    ...prior,
+    x: blob.cx,
+    y: blob.cy,
+    vx: vx * scale,
+    vy: vy * scale,
+    hue: lerpHue(prior.hue, blob.hue - ep.lightEstimate, 0.32),
+    fill: prior.fill * 0.65 + blob.fill * 0.35,
+    evidence: prior.evidence * 0.45 + 0.55,
+    prediction: 1 - mismatch,
+    uncertainty: clamp(prior.uncertainty * 0.62 + mismatch * 0.22),
+    reason: hueError > 32 ? "noise" : "none",
+    source: "observed",
+    age: prior.age + 1,
+    boundBlob: blob.index,
+    unseen: 0,
+    conflict: false,
+    flowError,
+    radius: Math.sqrt(blob.area / Math.PI) * (2 * obs.aperture / obs.grid),
+  };
+  finishTrack(t);
+  return t;
+}
+
+function perceive(ep: Agent, blobs: Blob[], obs: Observation, action: number, schemaOn: boolean): void {
+  const priors = ep.tracks;
+  const misses = priors.map((t) => predictMiss(t, obs));
+  const matches = priors.map((prior, i) => {
+    const options = blobs.map((blob) => {
+      if (hypot(blob.cx - misses[i]!.x, blob.cy - misses[i]!.y) > 16) return null;
+      return matchTrack(ep, prior, blob, obs);
+    });
+    for (const t of options) {
+      if (!t) continue;
+      t.conflict = options.some((alt) =>
+        alt && alt !== t && Math.abs(alt.prediction - t.prediction) < 0.1);
+      if (t.conflict) t.reason = "conflict";
+    }
+    return options;
+  });
+  // Grade the executed look against the new frame before testing scene interpretations.
+  // This measures available sensory support even if the optimizer later rejects a binding.
+  const focusIndex = priors.findIndex((t) => t.id === ep.focusPrevId);
+  ep.selfError = null;
+  if (schemaOn && focusIndex >= 0) {
+    const support = matches[focusIndex]!.reduce<Track | null>((best, t) =>
+      t && (!best || t.prediction > best.prediction) ? t : best, null);
+    const observed = support != null;
+    const actual = support ?? misses[focusIndex]!;
+    const drop = priors[focusIndex]!.uncertainty - actual.uncertainty;
+    const miss = ep.predictedObserved === observed ? 0 : 0.7;
+    ep.selfError = clamp(miss + 0.3 * Math.min(1, Math.abs(ep.predictedDrop - drop)));
+  }
+  const births = blobs.map((blob) => newTrack(ep, blob));
+  // Slots keep prior identities stable while testing deletions, rebindings and swaps.
+  type Slot = Track | null;
+  let slots: Slot[] = [...misses, ...births.map(() => null)];
+  const score = (candidate: Slot[]) =>
+    energies(ep, candidate.filter((t): t is Track => t != null), misses, blobs, action);
+  let current = score(slots);
+  const trace = [current.total];
+  const epsilon = 1e-5;
+
   for (let iter = 0; iter < ep.iterationBudget; iter++) {
-    used++;
-    const claimed = new Set<number>();
-    const order = [...ep.tracks].sort((a, b) => b.evidence - a.evidence);
-    for (const t of order) {
-      let best = -1;
-      let bestCost = 1e9;
-      let runner = 1e9;
-      for (const blob of blobs) {
-        if (claimed.has(blob.index)) continue;
-        const dist = hypot(blob.cx - t.x, blob.cy - t.y);
-        if (dist > 16) continue;
-        const expected = wrapHue(t.hue + ep.lightEstimate);
-        const cost =
-          (dist / 18) * 1.2 + (hueDelta(expected, blob.hue) / 180) * 0.55 + Math.abs(t.fill - blob.fill) * 0.2;
-        if (cost < bestCost) {
-          runner = bestCost;
-          bestCost = cost;
-          best = blob.index;
-        } else if (cost < runner) runner = cost;
+    let best = slots;
+    let lowest = current;
+    const consider = (candidate: Slot[]) => {
+      const candidateEnergy = score(candidate);
+      if (candidateEnergy.total < lowest.total) {
+        lowest = candidateEnergy;
+        best = candidate;
       }
-      if (best >= 0 && bestCost < 1.28) {
-        claimed.add(best);
-        const blob = blobs.find((b) => b.index === best)!;
-        const from = origin.get(t.id)!;
-        const alpha = 0.42 + iter * 0.08;
-        t.x = t.x * (1 - alpha) + blob.cx * alpha;
-        t.y = t.y * (1 - alpha) + blob.cy * alpha;
-        if (!sampled.has(t.id)) {
-          const obsVx = blob.cx - from.x;
-          const obsVy = blob.cy - from.y;
-          t.vx = from.vx * 0.35 + obsVx * 0.65;
-          t.vy = from.vy * 0.35 + obsVy * 0.65;
-          const speed = hypot(t.vx, t.vy);
-          if (speed > 3.2) {
-            t.vx = (t.vx / speed) * 3.2;
-            t.vy = (t.vy / speed) * 3.2;
+    };
+
+    for (let i = 0; i < priors.length; i++) {
+      if (slots[i] && slots[i]!.boundBlob == null) {
+        const removed = slots.slice();
+        removed[i] = null;
+        consider(removed);
+      }
+      for (const match of matches[i]!) {
+        if (!match || slots[i] === match) continue;
+        const candidate = slots.slice();
+        const owner = slots.findIndex((t) => t && t.boundBlob === match.boundBlob);
+        if (owner >= 0) {
+          const previous = slots[i]?.boundBlob;
+          candidate[owner] = misses[owner] ?? null;
+          if (owner < priors.length && previous != null && matches[owner]![previous]) {
+            candidate[owner] = matches[owner]![previous]!;
           }
-          t.flowError = hypot(obsVx - from.vx, obsVy - from.vy);
-          const intrinsic = wrapHue(blob.hue - ep.lightEstimate);
-          const hueResidual = hueDelta(wrapHue(t.hue + ep.lightEstimate), blob.hue);
-          t.hue = lerpHue(t.hue, intrinsic, 0.32);
-          t.fill = t.fill * 0.65 + blob.fill * 0.35;
-          t.evidence = clamp(t.evidence * 0.45 + 0.55);
-          t.prediction = clamp(1 - bestCost / 1.28);
-          t.uncertainty = clamp(t.uncertainty * 0.62 + (bestCost / 1.28) * 0.22);
-          t.reason = hueResidual > 32 ? "noise" : "none";
-          t.radius = Math.sqrt(blob.area / Math.PI) * (2 * obs.aperture / obs.grid);
-          sampled.add(t.id);
         }
-        t.source = "observed";
-        t.unseen = 0;
-        t.boundBlob = best;
-        t.conflict = runner < bestCost * 1.22 && runner < 1.28;
+        candidate[i] = match;
+        if (candidate.filter(Boolean).length <= MAX_TRACKS) consider(candidate);
       }
     }
 
-    const unexplained =
-      blobs.length === 0
-        ? 0
-        : blobs.filter((b) => !ep.tracks.some((t) => t.boundBlob === b.index)).length / blobs.length;
-    const meanU = ep.tracks.length
-      ? ep.tracks.reduce((s, t) => s + t.uncertainty, 0) / ep.tracks.length
-      : 1;
-    trace.push(clamp(unexplained * 0.6 + meanU * 0.4));
-    const settled =
-      !ep.tracks.some((t) => t.conflict) && unexplained === 0 && meanU < 0.3 && ep.tracks.length > 0;
-    if (settled && iter >= 1) break;
+    if (slots.filter(Boolean).length < MAX_TRACKS) {
+      for (const birth of births) {
+        if (slots.some((t) => t?.boundBlob === birth.boundBlob)) continue;
+        const candidate = slots.slice();
+        candidate[priors.length + birth.boundBlob!] = birth;
+        consider(candidate);
+      }
+    }
+
+    const improvement = current.total - lowest.total;
+    slots = best;
+    current = lowest;
+    trace.push(current.total);
+    if (improvement < epsilon) break;
   }
 
+  ep.tracks = slots.filter((t): t is Track => t != null);
+  for (const t of ep.tracks) ep.nextId = Math.max(ep.nextId, t.id + 1);
+  ep.energy = current;
+  ep.energyTrace = trace;
+  ep.iterationsUsed = trace.length - 1;
   for (const t of ep.tracks) {
     if (t.boundBlob == null || t.uncertainty > 0.4) continue;
-    const blob = blobs.find((b) => b.index === t.boundBlob);
-    if (!blob) continue;
-    let residual = wrapHue(blob.hue - t.hue) - ep.lightEstimate;
-    residual = ((residual + 540) % 360) - 180;
-    ep.lightEstimate += residual * 0.08;
-    if (ep.lightEstimate > 40) ep.lightEstimate = 40;
-    if (ep.lightEstimate < -40) ep.lightEstimate = -40;
+    const residual = ((blobs[t.boundBlob]!.hue - t.hue - ep.lightEstimate + 540) % 360) - 180;
+    ep.lightEstimate = clamp(ep.lightEstimate + residual * 0.08, -40, 40);
   }
-
-  ep.iterationsUsed = used;
-  ep.energyTrace = trace;
-
-  for (const t of ep.tracks) {
-    if (t.boundBlob != null) continue;
-    t.unseen += 1;
-    const loc = explainMiss(obs, t.x, t.y);
-    if (loc.status === "outside") {
-      t.source = t.unseen > 10 ? "imagined" : "predicted";
-      t.uncertainty = clamp(t.uncertainty + 0.08);
-      t.evidence = clamp(t.evidence - 0.03);
-      t.reason = "no-data";
-      t.prediction = clamp(t.prediction * 0.94);
-    } else if (loc.kind === "occluder") {
-      t.source = "predicted";
-      t.uncertainty = clamp(t.uncertainty + 0.02);
-      t.evidence = clamp(t.evidence - 0.005);
-      t.reason = "occlusion";
-      t.prediction = Math.max(t.prediction, 0.55);
-    } else if (loc.kind === "empty") {
-      t.source = "predicted";
-      t.uncertainty = clamp(t.uncertainty + 0.16);
-      t.evidence = clamp(t.evidence * 0.72);
-      t.reason = "absence";
-      t.prediction = clamp(t.prediction * 0.65);
-    } else {
-      t.source = "mixed";
-      t.uncertainty = clamp(t.uncertainty + 0.06);
-      t.reason = "conflict";
-      t.conflict = true;
-    }
-  }
-
-  for (const blob of blobs) {
-    if (ep.tracks.some((t) => t.boundBlob === blob.index)) continue;
-    if (ep.tracks.some((t) => hypot(t.x - blob.cx, t.y - blob.cy) < 9)) continue;
-    spawnFromBlob(ep, blob);
-  }
-
-  ep.tracks = ep.tracks.filter((t) => !(t.age > 2 && (t.uncertainty > 0.92 || t.evidence < 0.08)));
-  for (const t of ep.tracks) {
-    t.age += 1;
-    finishTrack(t);
-  }
-
 }
 
 function selectWorkspace(ep: Agent): void {
@@ -456,7 +489,6 @@ function salienceDecision(ep: Agent, useMemory: boolean): Decision {
     reason: "salience",
     focusId: largest ? ep.tracks.find((t) => t.boundBlob === largest.index)?.id ?? null : null,
     note: largest ? "Взгляд направлен к самому крупному пятну." : "В окне пусто. Проверяю место последнего крупного пятна.",
-
   };
 }
 
@@ -468,57 +500,55 @@ function gradeAction(ep: Agent, obs: Observation): number {
   return bad / obs.cells.length;
 }
 
-function energies(ep: Agent, blobs: Blob[], action: number, selfActive: boolean): EnergyBreakdown {
-  const unbound =
-    blobs.length === 0
-      ? 0
-      : blobs.filter((b) => !ep.tracks.some((t) => t.boundBlob === b.index)).length / blobs.length;
-  let hueAcc = 0;
-  let hueN = 0;
-  let flowAcc = 0;
-  let flowN = 0;
-  for (const t of ep.tracks) {
-    if (t.boundBlob == null) continue;
-    const blob = blobs.find((b) => b.index === t.boundBlob);
-    if (!blob) continue;
-    hueAcc += hueDelta(wrapHue(t.hue + ep.lightEstimate), blob.hue) / 180;
-    hueN++;
-    flowAcc += Math.min(1, t.flowError / 4);
-    flowN++;
+const DEFAULT_WEIGHTS = {
+  sensory: 0.3, binding: 0.16, temporal: 0.16, action: 0.18, self: 0.12, regularization: 0.08,
+};
+
+function weightedEnergy(weights: typeof DEFAULT_WEIGHTS, terms: EnergyBreakdown): number {
+  let sum = 0;
+  let norm = 0;
+  for (const key of Object.keys(weights) as (keyof typeof weights)[]) {
+    const value = terms[key];
+    if (value == null) continue;
+    sum += weights[key] * value;
+    norm += weights[key];
   }
-  const silence = blobs.length > 0 && ep.tracks.length === 0 ? 0.85 : 0;
-  const sensory = clamp(unbound * 0.7 + (hueN ? hueAcc / hueN : 0) * 0.45 + silence);
-  const binding = clamp(ep.tracks.filter((t) => t.conflict).length / 2);
-  const temporal = flowN ? clamp(flowAcc / flowN) : ep.tracks.some((t) => t.unseen > 0) ? 0.2 : 0;
-  const meanConf = ep.tracks.length
-    ? ep.tracks.reduce((s, t) => s + t.confidence, 0) / ep.tracks.length
-    : 0;
-  const overconfident = meanConf > 0.82 && sensory > 0.38;
-  const regularization = clamp(
-    (ep.tracks.length / MAX_TRACKS) * 0.45 +
-      (ep.iterationsUsed / BUDGET) * 0.2 +
-      (overconfident ? 0.45 : 0) +
-      (silence > 0 ? 0.25 : 0),
-  );
-  const self = selfActive ? ep.selfError : null;
-  const wS = 0.3;
-  const wB = 0.16;
-  const wT = 0.16;
-  const wA = 0.18;
-  const wM = 0.12;
-  const wR = 0.08;
-  const partial = wS * sensory + wB * binding + wT * temporal + wA * action + wR * regularization;
-  const total = self == null ? partial / (1 - wM) : partial + wM * self;
-  return {
-    sensory,
-    binding,
-    temporal,
-    action,
-    self,
-    regularization,
-    total: clamp(total),
-    overconfident,
-  };
+  return norm > 0 ? sum / norm : 0;
+}
+
+function energies(ep: Agent, tracks: Track[], misses: Track[], blobs: Blob[], action: number): EnergyBreakdown {
+  let unexplained = blobs.length;
+  let hueError = 0;
+  let bindingError = 0;
+  let motionError = 0;
+  for (const t of tracks) {
+    if (t.boundBlob == null) continue;
+    unexplained--;
+    const blob = blobs[t.boundBlob]!;
+    hueError += hueDelta(t.hue + ep.lightEstimate, blob.hue) / 180;
+    const prior = ep.tracks.find((p) => p.id === t.id);
+    if (prior) {
+      bindingError += (Math.abs(prior.fill - blob.fill) + hueDelta(prior.hue + ep.lightEstimate, blob.hue) / 180) / 2;
+      motionError += clamp(t.flowError / 16);
+    } else {
+      // A new identity explains a patch, but has no trajectory to support it.
+      motionError += 0.5;
+    }
+  }
+  for (const miss of misses) {
+    if (!tracks.some((t) => t.id === miss.id)) motionError += miss.evidence * (1 - miss.uncertainty);
+  }
+  const patches = Math.max(1, blobs.length);
+  const silence = blobs.length > 0 && tracks.length === 0;
+  const sensory = clamp((unexplained + hueError) / patches);
+  const binding = clamp((bindingError + tracks.filter((t) => t.conflict).length / 2) / patches);
+  const temporal = clamp(motionError / Math.max(patches, misses.length));
+  const overconfident = tracks.some((t) => t.confidence > 0.82) && sensory > 0.38;
+  const regularization = clamp(tracks.length / MAX_TRACKS * 0.45 +
+    (overconfident ? 0.45 : 0) + (silence ? 0.25 : 0));
+  const terms = { sensory, binding, temporal, action, self: ep.selfError, regularization, total: 0, overconfident };
+  terms.total = weightedEnergy(ep.weights, terms);
+  return terms;
 }
 
 /** Project only the samples just seen into a persistent map of the stationary wall. */
@@ -572,11 +602,11 @@ export function createAgent(obs: Observation): Agent {
     energy: emptyEnergy(),
     guesses: [],
     wallMap: new Uint8Array(WORLD ** 2),
-    prevU: {},
     focusPrevId: null,
     predictedDrop: 0,
     predictedObserved: false,
     selfError: null,
+    weights: { ...DEFAULT_WEIGHTS },
     iterationBudget: BUDGET,
     iterationsUsed: 0,
     energyTrace: [],
@@ -593,11 +623,10 @@ export function createAgent(obs: Observation): Agent {
   ep.cells = obs.cells;
   ep.grid = obs.grid;
   ep.blobs = extractBlobs(obs);
-  perceive(ep, ep.blobs, obs);
+  perceive(ep, ep.blobs, obs, 0, true);
   selectWorkspace(ep);
   rememberWall(ep, obs);
   ep.guesses = buildGuesses(ep, gaze.x, gaze.y, gaze.aperture);
-  ep.energy = energies(ep, ep.blobs, 0, true);
   ep.attention.agreement = agreementOf(ep.tracks, ep.blobs);
   return ep;
 }
@@ -612,21 +641,8 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
   ep.obsGaze = { x: obs.gazeX, y: obs.gazeY, aperture: obs.aperture };
   rememberWall(ep, obs);
 
-  const prevFocus = ep.focusPrevId;
-  const beforeU = prevFocus == null ? null : (ep.prevU[prevFocus] ?? null);
-  perceive(ep, ep.blobs, obs);
-
   const schemaOn = cfg.ablation === "full" || cfg.ablation === "record-only";
-  if (schemaOn && prevFocus != null && beforeU != null) {
-    const now = ep.tracks.find((t) => t.id === prevFocus);
-    const actualDrop = now ? beforeU - now.uncertainty : -0.45;
-    const actualObserved = !!now && now.boundBlob != null && now.source === "observed";
-    const miss = ep.predictedObserved === actualObserved ? 0 : 0.7;
-    ep.selfError = clamp(miss + 0.3 * Math.min(1, Math.abs(ep.predictedDrop - actualDrop)));
-
-  } else {
-    ep.selfError = null;
-  }
+  perceive(ep, ep.blobs, obs, actionError, schemaOn);
 
   if (cfg.injectConfidence && schemaOn) {
     for (const t of ep.tracks) {
@@ -637,7 +653,6 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
     }
   }
   selectWorkspace(ep);
-  ep.energy = energies(ep, ep.blobs, actionError, schemaOn);
   ep.history.push({ step: ep.stepIndex, total: ep.energy.total });
   if (ep.history.length > 48) ep.history.shift();
 
@@ -668,8 +683,6 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
   ep.predictedObserved = pred.observed;
   ep.predictedDrop = pred.drop;
   ep.focusPrevId = schemaOn ? executed.focusId : null;
-  ep.prevU = {};
-  for (const t of ep.tracks) ep.prevU[t.id] = t.uncertainty;
 
   const influences = ablation === "full" && !cfg.pinGaze;
   ep.attention = {

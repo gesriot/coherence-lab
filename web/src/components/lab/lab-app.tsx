@@ -368,6 +368,15 @@ export function LabApp() {
           <EnergyRow label="Самомодель" value={view.energy.self} />
           <EnergyRow label="Ресурс" value={view.energy.regularization} />
         </div>
+        <figure className="mt-4">
+          <figcaption className="text-xs text-muted">Итерации согласования · E от исходной сцены до остановки</figcaption>
+          <svg className="mt-1 h-12 w-44" viewBox="0 0 160 42" role="img"
+            aria-label={view.energyTrace.map((value) => value.toFixed(3)).join(" → ")}>
+            <polyline fill="none" stroke="currentColor" strokeWidth="2" className="text-accent"
+              points={view.energyTrace.map((value, i) =>
+                `${2 + 156 * i / Math.max(1, view.energyTrace.length - 1)},${40 - 38 * value}`).join(" ")} />
+          </svg>
+        </figure>
         <div className="mt-4 flex h-10 items-end gap-1" aria-hidden>
           {view.history.map((point) => (
             <div

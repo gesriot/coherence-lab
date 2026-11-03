@@ -176,3 +176,36 @@ test("the verdict requires an advantage over the main controls and independent r
   rows[3]!.retention = rows[3]!.pair = 1;
   assert.equal(assess(rows, 20).causal, "mixed");
 });
+
+test("binding and motion weights resolve the same ambiguous crossing differently", () => {
+  const frame = (swapped: boolean) => {
+    const obs = patches([3, 4]);
+    obs.cells[35]!.hue = swapped ? 200 : 20;
+    obs.cells[36]!.hue = swapped ? 20 : 200;
+    return obs;
+  };
+  const assignment = (binding: number, temporal: number) => {
+    const agent = createAgent(frame(false));
+    const ids = agent.tracks.map((t) => t.id);
+    agent.weights = { ...agent.weights, binding, temporal };
+    stepAgent(agent, frame(true), defaultConfig());
+    return ids.map((id) => agent.tracks.find((t) => t.id === id)?.boundBlob);
+  };
+  assert.deepEqual(assignment(0.1, 2), [0, 1]);
+  assert.deepEqual(assignment(2, 0.1), [1, 0]);
+});
+
+test("accepted energies descend to the displayed total and weak hypotheses can expire", () => {
+  const agent = createAgent(patches([1, 6]));
+  assert.equal(agent.tracks.length, 2);
+  assert.ok(agent.energyTrace[0]! > agent.energy.total);
+  for (let i = 0; i < 20; i++) {
+    stepAgent(agent, patches([]), defaultConfig());
+    const trace = agent.energyTrace;
+    assert.equal(trace.length, agent.iterationsUsed + 1);
+    assert.ok(agent.iterationsUsed <= agent.iterationBudget);
+    assert.ok(trace.every((e, j) => j === 0 || e <= trace[j - 1]!));
+    assert.equal(trace.at(-1), agent.energy.total);
+  }
+  assert.equal(agent.tracks.length, 0);
+});
