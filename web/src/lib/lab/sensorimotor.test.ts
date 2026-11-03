@@ -95,3 +95,36 @@ test("the sensorimotor design runner rejects participant conditions before runni
     assert.throws(() => designGainControls(["ideal", id]), /Недопустимое условие/);
   }
 });
+
+import { compareGainConditions, type ComparisonControls } from "./sensorimotor-comparison.ts";
+import { sensorimotorTask } from "./sensorimotor-task.ts";
+import type { GainRuns } from "./sensorimotor.ts";
+
+test("the sensorimotor design, oracle rate and reserved seeds are frozen", () => {
+  assert.deepEqual(sensorimotorTask, {
+    bodyMinOffset: 0.1, bodyMaxOffset: 0.2, minGazeShift: 0, minGain: 0.5, maxGain: 2, memory: 256,
+    checkpoints: [0, 4, 8, 16, 32, 64], rates: [0.003, 0.01, 0.03, 0.1], evaluationCount: 20,
+    design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
+    tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
+    comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleRate: 0.003,
+  });
+});
+
+test("no participant or verdict is produced if a sensorimotor control fails", () => {
+  const synthetic = (scores: number[]): GainRuns => [scores.map((accuracy) => ({
+    accuracy, retention: accuracy, ghostFree: accuracy, untracked: 0, motionError: 0, hidden: 0.001, open: 0.02,
+    miss: 0.1, calibrationError: 0, gainX: 1, gainY: 1,
+  }))];
+  const good = synthetic([0.6, 0.9, 0.85, 0.9, 0.9, 0.9]);
+  const valid = { frozen: synthetic(Array(6).fill(0.75)), ideal: synthetic(Array(6).fill(1)), oracle: good, participantOracle: good };
+  for (const [key, values] of [
+    ["frozen", [0.5, 0.775, 0.5, 0.5, 0.5, 0.5]], ["ideal", [1, 1, 1, 1, 1, 0.875]],
+    ["oracle", [0.5, 0.9, 0.825, 0.9, 0.9, 1]], ["participantOracle", [0.5, 0.9, 0.9, 0.9, 0.9, 0.875]],
+  ] satisfies [keyof ComparisonControls, number[]][]) {
+    assert.equal(compareGainConditions({ ...valid, [key]: synthetic(values) }, () => assert.fail("gate opened")), null);
+  }
+  const result = compareGainConditions(valid, () => good)!;
+  assert.equal(result.participants.size, 4);
+  assert.deepEqual(result.differences.map((d) => d.estimate.mean), [0, 0, 0]);
+  assert.match(result.verdicts[2]!, /не применимо/);
+});
