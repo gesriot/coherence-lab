@@ -219,8 +219,35 @@ test("a seeded first-order training run reproduces its held-out learning curve",
   assert.deepEqual(run(), run());
 });
 
-import { confirmsForecast } from "./genesis.ts";
+import { confirmsForecast, evaluateDisappearance } from "./genesis.ts";
 import { controlCurve, permitsComparison, referenceModel, requireControl, runFeasibility } from "./feasibility.ts";
+
+test("clearing A on the first empty frame counts as ghost-free", () => {
+  const models = referenceModel("ideal");
+  models.logits = existenceLogits({ ...genesisTask.idealExistence, miss: 0.0005 });
+  const cfg = { ...defaultConfig(), ablation: "first-order" as const };
+  const ep = createEpisode("vanish", 3001, cfg.ablation, models);
+  const at = ep.world.objects[0]!.vanishAt!;
+  while (ep.world.t < at - 1) stepEpisode(ep, cfg);
+  const id = snapshot(ep, cfg.ablation).evaluator.objects[0]!.nearestTrack;
+  assert.notEqual(id, null);
+  stepEpisode(ep, cfg);
+  assert.ok(!ep.agent.tracks.some((t) => t.id === id));
+  const point = evaluate(models, cfg.ablation, 3001, 1);
+  assert.equal(point.untracked, 0);
+  assert.equal(point.ghostFree, 1);
+});
+
+test("losing A before disappearance is scored as untracked", () => {
+  const cfg = { ...defaultConfig(), ablation: "first-order" as const, pinGaze: true, pinX: 90, pinY: 90 };
+  assert.equal(evaluateDisappearance(freshModels(), 3001, cfg), "untracked");
+});
+
+test("keeping the original track past the deadline fails the ghost-free task", () => {
+  const point = evaluate(referenceModel("keep-all"), "first-order", 3001, 1);
+  assert.equal(point.untracked, 0);
+  assert.equal(point.ghostFree, 0);
+});
 
 test("design command rejects every comparison condition", () => {
   for (const id of ["full", "first-order", "no-protocol", "strong-first-order", "constructor"]) {

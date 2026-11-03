@@ -3,7 +3,7 @@ import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } fro
 import { generator, Learner, type Rates } from "./experience.ts";
 import { conditions, trainEpisode, type Condition, type Labels } from "./genesis-training.ts";
 import { probability, type Models } from "./learning.ts";
-import type { Ablation } from "./types.ts";
+import type { Ablation, LabConfig } from "./types.ts";
 import { hiddenByOccluder } from "./world.ts";
 
 export const { checkpoints } = genesisTask;
@@ -58,6 +58,17 @@ export interface Point {
   miss: number;
 }
 
+export function evaluateDisappearance(models: Models, seed: number, cfg: LabConfig) {
+  const ep = createEpisode("vanish", seed, cfg.ablation, models);
+  const at = ep.world.objects[0]!.vanishAt!;
+  // Identify A's track on the last visible frame, before the first empty observation.
+  while (ep.world.t < at - 1) stepEpisode(ep, cfg);
+  const id = snapshot(ep, cfg.ablation).evaluator.objects[0]!.nearestTrack;
+  if (id == null) return "untracked";
+  while (ep.world.t < at + ghostDelay) stepEpisode(ep, cfg);
+  return ep.agent.tracks.some((t) => t.id === id) ? "ghost" : "cleared";
+}
+
 export function evaluate(models: Models, ablation: Ablation, firstSeed: number, seeds = EVAL_SEEDS): Point {
   let held = 0, clean = 0, untracked = 0, error = 0, predictions = 0;
   const cfg = { ...defaultConfig(), ablation };
@@ -78,17 +89,9 @@ export function evaluate(models: Models, ablation: Ablation, firstSeed: number, 
       else if (hidden && !exit) exit = step;
       if (exit && step === exit + 1 && snapshot(ep, ablation).evaluator.retained) held++;
     }
-    const vanish = createEpisode("vanish", seed, ablation, models);
-    const at = vanish.world.objects[0]!.vanishAt!;
-    let id: number | null = null;
-    for (let step = 1; step <= Math.max(40, at + ghostDelay); step++) {
-      stepEpisode(vanish, cfg);
-      if (step === at) {
-        id = snapshot(vanish, ablation).evaluator.objects[0]!.nearestTrack;
-        if (id == null) untracked++;
-      }
-      if (step === at + ghostDelay && id != null && !vanish.agent.tracks.some((t) => t.id === id)) clean++;
-    }
+    const outcome = evaluateDisappearance(models, seed, cfg);
+    if (outcome === "untracked") untracked++;
+    if (outcome === "cleared") clean++;
   }
   return {
     accuracy: (held + clean) / (2 * seeds), retention: held / seeds,
