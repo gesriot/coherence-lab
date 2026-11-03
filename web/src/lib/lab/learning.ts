@@ -1,21 +1,29 @@
-import { hueDelta } from "./math.ts";
+import { clamp, hueDelta } from "./math.ts";
 import type { MotionSample, Track } from "./types.ts";
 
 export type Vector = [number, number];
 export type Features = [number, number, number, number, number];
-export const causes = ["occlusion", "absence", "no-data"] as const;
-export type Cause = typeof causes[number];
-type Exposure = Record<Cause, number>;
+export type Context = "hidden" | "open";
+export interface GapStep {
+  context: Context;
+  observation: "empty" | "none";
+}
+export const existenceKeys = ["hidden", "open", "miss"] as const;
+type Existence = Record<typeof existenceKeys[number], number>;
 export interface Models {
   weights: [Features, Features];
-  logits: Exposure;
+  logits: Existence;
+}
+
+export function existenceLogits(probabilities: Existence): Existence {
+  const logit = (p: number) => Math.log(p / (1 - p));
+  return { hidden: logit(probabilities.hidden), open: logit(probabilities.open), miss: logit(probabilities.miss) };
 }
 
 export function freshModels(): Models {
-  const logit = Math.log(0.28 / 0.72);
   return {
     weights: [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0]],
-    logits: { occlusion: logit, absence: logit, "no-data": logit },
+    logits: existenceLogits({ hidden: 0.28, open: 0.28, miss: 0.5 }),
   };
 }
 
@@ -52,27 +60,56 @@ export function fitMotion(models: Models, example: MotionExample, rate: number):
   }
 }
 
-export function hazard(models: Models, cause: Cause): number {
-  return 1 / (1 + Math.exp(-models.logits[cause]));
+export function probability(models: Models, key: keyof Existence): number {
+  return 1 / (1 + Math.exp(-models.logits[key]));
+}
+
+export function filterExistence(models: Models, belief: number, step: GapStep): number {
+  const predicted = belief * (1 - probability(models, step.context));
+  if (step.observation === "none") return predicted;
+  const missed = predicted * probability(models, "miss");
+  return missed / (missed + (1 - predicted));
 }
 
 export interface GapExample {
-  exposure: Exposure;
-  last: Cause;
+  seen: number;
+  steps: GapStep[];
   found: boolean;
 }
 
-export function fitPermanence(models: Models, gap: GapExample, rate: number): void {
-  for (const c of causes) {
-    const event = Number(!gap.found && gap.last === c);
-    // Exposure includes the terminal step. Its Bernoulli target is one only for a loss.
-    models.logits[c] += rate * (event - hazard(models, c) * gap.exposure[c]);
+export function gapLogLikelihood(models: Models, gap: GapExample): number {
+  const hidden = probability(models, "hidden"), open = probability(models, "open");
+  const miss = probability(models, "miss");
+  const detected = gap.seen * (Math.log1p(-open) + Math.log1p(-miss));
+  const decay = { hidden: Math.log1p(-hidden), open: Math.log1p(-open) };
+  const logMiss = Math.log(miss);
+  let logSurvival = 0, lost = 0;
+  for (const { context, observation } of gap.steps) {
+    // Loss on this step precedes its observation. Later empty views then have probability one.
+    if (!gap.found) lost += Math.exp(logSurvival) * (context === "hidden" ? hidden : open);
+    logSurvival += decay[context] + (observation === "empty" ? logMiss : 0);
   }
+  return detected + (gap.found ? logSurvival : Math.log(lost));
+}
+
+export function fitExistence(models: Models, gap: GapExample, rate: number): void {
+  const delta = 1e-4;
+  const next = { ...models.logits };
+  for (const key of existenceKeys) {
+    const theta = models.logits[key];
+    models.logits[key] = theta + delta;
+    const plus = gapLogLikelihood(models, gap);
+    models.logits[key] = theta - delta;
+    const minus = gapLogLikelihood(models, gap);
+    models.logits[key] = theta;
+    next[key] = clamp(theta + rate * (plus - minus) / (2 * delta), -9, 9);
+  }
+  models.logits = next;
 }
 
 interface Gap {
-  exposure: Exposure;
-  last: Cause | null;
+  seen: number;
+  steps: GapStep[];
   start: { x: number; y: number; step: number };
   trace: Track;
   deletedAt: number | null;
@@ -96,7 +133,7 @@ export class GapBook {
     for (const prior of before) {
       if (prior.boundBlob == null || after.some((t) => t.id === prior.id && t.boundBlob != null)) continue;
       this.pending.set(prior.id, {
-        exposure: { occlusion: 0, absence: 0, "no-data": 0 }, last: null,
+        seen: prior.seenRun ?? 0, steps: [],
         start: { x: prior.x + prior.vx, y: prior.y + prior.vy, step }, trace: prior, deletedAt: null,
       });
     }
@@ -117,15 +154,11 @@ export class GapBook {
       }
       const previous = gap.trace;
       gap.trace = predicted;
-      const reason = predicted.reason;
-      if (!found && (reason === "occlusion" || reason === "absence" || reason === "no-data")) {
-        gap.exposure[reason]++;
-        gap.last = reason;
-      }
+      if (!found) gap.steps.push(predicted.gapStep!);
       if (found || (gap.deletedAt != null && step - gap.deletedAt >= 30)) {
-        if (gap.last) {
+        if (gap.steps.length) {
           const forecast = { x: previous.x + previous.vx, y: previous.y + previous.vy, radius: radius(previous) };
-          closed.push({ id, start: gap.start, forecast, exposure: gap.exposure, last: gap.last, found });
+          closed.push({ id, start: gap.start, forecast, seen: gap.seen, steps: gap.steps, found });
         }
         this.pending.delete(id);
       }

@@ -5,12 +5,12 @@ const requested = process.argv.slice(2);
 const ids = requested.length ? [...new Set(requested.map(requireControl))] : controls;
 const { rates, curves } = runFeasibility(ids);
 console.log("Проверка выполнимости · прогоны 701–710 · оценочные зёрна 3001–3020");
-if (ids.includes("oracle")) console.log(`Шаги обучения оракула: движение ${decimal(rates.motion)}, постоянство ${decimal(rates.permanence)}.`);
+if (ids.includes("oracle")) console.log(`Шаги обучения оракула: движение ${decimal(rates.motion)}, существование ${decimal(rates.existence)}.`);
 for (const [id, curve] of curves) {
   console.log(controlNames[id]);
   console.table(curve.map((p) => ({
     Эпизод: p.step, Точность: decimal(p.accuracy, 4), Удержание: decimal(p.retention),
-    "Без призрака": decimal(p.ghostFree), "h стена / пусто / вне окна": p.hazards.map((v) => decimal(v)).join(" / "),
+    "Без призрака": decimal(p.ghostFree), "λ_hidden / λ_open / m": p.existence.map((v) => decimal(v)).join(" / "),
     "W по строкам": p.weights.map((v) => decimal(v)).join(" "),
   })));
 }

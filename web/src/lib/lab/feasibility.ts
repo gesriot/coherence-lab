@@ -1,6 +1,6 @@
 import { genesisTask } from "./genesis-task.ts";
 import { checkpoints, evaluate, mean, trainingCurve } from "./genesis.ts";
-import { causes, freshModels, type Models } from "./learning.ts";
+import { existenceKeys, existenceLogits, freshModels, type Models } from "./learning.ts";
 import type { Rates } from "./experience.ts";
 
 export const controlNames = {
@@ -19,10 +19,7 @@ export function referenceModel(id: "frozen" | "keep-all" | "ideal"): Models {
   if (id === "frozen") return model;
   model.weights[0][2] = 1;
   model.weights[1][3] = 1;
-  for (const cause of causes) {
-    const h = id === "keep-all" ? genesisTask.keepAllHazard : genesisTask.idealHazards[cause];
-    model.logits[cause] = Math.log(h / (1 - h));
-  }
+  model.logits = existenceLogits(id === "keep-all" ? genesisTask.keepAllExistence : genesisTask.idealExistence);
   return model;
 }
 
@@ -41,7 +38,7 @@ export function controlCurve(
         ]
       : undefined;
     return {
-      ...test(models), split, weights: models.weights.flat(), logits: causes.map((c) => models.logits[c]),
+      ...test(models), split, weights: models.weights.flat(), logits: existenceKeys.map((c) => models.logits[c]),
     };
   };
   if (control === "oracle") return trainingCurve("oracle", seed, rates, stages, measure);
@@ -62,10 +59,10 @@ const design: Design = { firstRun: 701, runs: 10, firstEvalSeed: 3001, seeds: 20
 export function designOracle(config: Design = design) {
   const final = [config.stages[config.stages.length - 1]!];
   let best = -1;
-  let chosen: Rates = { motion: 0.03, permanence: 0.003 };
+  let chosen: Rates = { motion: 0.03, existence: 0.003 };
   for (const motion of [0.03, 0.1, 0.3, 1]) {
-    for (const permanence of [0.003, 0.01, 0.03, 0.1]) {
-      const rates = { motion, permanence };
+    for (const existence of [0.003, 0.01, 0.03, 0.1]) {
+      const rates = { motion, existence };
       let successes = 0;
       for (let seed = config.firstRun; seed < config.firstRun + config.runs; seed++) {
         const [point] = controlCurve("oracle", seed, rates, final, config.firstEvalSeed, config.seeds);
@@ -84,7 +81,7 @@ export function designCurve(control: Control, rates: Rates, config: Design = des
     controlCurve(control, config.firstRun + i, rates, config.stages, config.firstEvalSeed, config.seeds, true));
   return config.stages.map((step, i) => {
     const points = curves.map((r) => r[i]!);
-    const avg = (key: "accuracy" | "retention" | "ghostFree" | "occlusion" | "absence" | "noData") =>
+    const avg = (key: "accuracy" | "retention" | "ghostFree" | "hidden" | "open" | "miss") =>
       mean(points.map((p) => p[key]));
     return {
       step, accuracy: points.reduce((sum, p) => sum + Math.round(p.accuracy * units), 0) / (runs * units),
@@ -94,7 +91,7 @@ export function designCurve(control: Control, rates: Rates, config: Design = des
         retention: mean(points.map((p) => p.split![j]!.retention)),
         ghostFree: mean(points.map((p) => p.split![j]!.ghostFree)),
       })),
-      hazards: [avg("occlusion"), avg("absence"), avg("noData")],
+      existence: [avg("hidden"), avg("open"), avg("miss")],
       weights: points[0]!.weights.map((_, j) => mean(points.map((p) => p.weights[j]!))),
     };
   });
@@ -110,7 +107,7 @@ export function permitsComparison(curves: Record<Control, readonly number[]>): b
 
 export function runFeasibility(ids: Control[] = controls, config = design) {
   ids.forEach(requireControl);
-  const rates = ids.includes("oracle") ? designOracle(config) : { motion: 0, permanence: 0 };
+  const rates = ids.includes("oracle") ? designOracle(config) : { motion: 0, existence: 0 };
   const curves = new Map(ids.map((id) => [id, designCurve(id, rates, config)]));
   return { curves, rates };
 }

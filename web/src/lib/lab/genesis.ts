@@ -2,7 +2,7 @@ import { genesisTask } from "./genesis-task.ts";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "./agent.ts";
 import { generator, Learner, type Rates } from "./experience.ts";
 import { conditions, trainEpisode, type Condition, type Labels } from "./genesis-training.ts";
-import { hazard, type Models } from "./learning.ts";
+import { probability, type Models } from "./learning.ts";
 import type { Ablation } from "./types.ts";
 import { hiddenByOccluder } from "./world.ts";
 
@@ -53,9 +53,9 @@ export interface Point {
   ghostFree: number;
   untracked: number;
   motionError: number;
-  occlusion: number;
-  absence: number;
-  noData: number;
+  hidden: number;
+  open: number;
+  miss: number;
 }
 
 export function evaluate(models: Models, ablation: Ablation, firstSeed: number, seeds = EVAL_SEEDS): Point {
@@ -93,7 +93,7 @@ export function evaluate(models: Models, ablation: Ablation, firstSeed: number, 
   return {
     accuracy: (held + clean) / (2 * seeds), retention: held / seeds,
     ghostFree: clean / seeds, untracked, motionError: error / predictions,
-    occlusion: hazard(models, "occlusion"), absence: hazard(models, "absence"), noData: hazard(models, "no-data"),
+    hidden: probability(models, "hidden"), open: probability(models, "open"), miss: probability(models, "miss"),
   };
 }
 

@@ -1,3 +1,5 @@
+import type { GapStep } from "./learning.ts";
+
 export type Shape = "disk" | "square" | "triangle";
 
 export type SourceKind = "observed" | "predicted" | "remembered" | "mixed";
@@ -108,6 +110,8 @@ export interface Track {
   reason: UncertaintyReason;
   unseen: number;
   emptyViews?: number;
+  seenRun?: number;
+  gapStep?: GapStep;
   age: number;
   boundBlob: number | null;
   conflict: boolean;

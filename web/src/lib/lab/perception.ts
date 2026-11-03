@@ -1,5 +1,5 @@
 import { genesisTask } from "./genesis-task.ts";
-import { features, hazard, motion, type Features, type Models } from "./learning.ts";
+import { features, filterExistence, motion, type Features, type Models } from "./learning.ts";
 import { WORLD, clamp, hueDelta, hypot, lerpHue, wrapHue } from "./math.ts";
 import { classify, extractBlobs, locate, type Location } from "./observe.ts";
 import type {
@@ -163,21 +163,25 @@ function explainMiss(obs: Observation, x: number, y: number): Location {
   return here;
 }
 
-/** Confirm empty space only when all retinal cells intersecting the predicted disk are empty. */
-function observedEmptyDisk(obs: Observation, track: Track): boolean {
-  const { x, y, radius } = track;
-  if (Math.abs(x - obs.gazeX) + radius > obs.aperture ||
-      Math.abs(y - obs.gazeY) + radius > obs.aperture) return false;
+function diskInView(obs: Observation, x: number, y: number, radius: number): boolean {
+  return Math.abs(x - obs.gazeX) + radius <= obs.aperture && Math.abs(y - obs.gazeY) + radius <= obs.aperture;
+}
+
+function observedEmptyDisk(
+  obs: Observation, x: number, y: number, radius: number, cells: "intersecting" | "centers",
+): boolean {
+  if (!diskInView(obs, x, y, radius)) return false;
   const size = 2 * obs.aperture / obs.grid;
   const left = obs.gazeX - obs.aperture, top = obs.gazeY - obs.aperture;
   const col0 = Math.max(0, Math.floor((x - radius - left) / size));
   const row0 = Math.max(0, Math.floor((y - radius - top) / size));
   const col1 = Math.min(obs.grid - 1, Math.floor((x + radius - left) / size));
   const row1 = Math.min(obs.grid - 1, Math.floor((y + radius - top) / size));
+  const margin = cells === "intersecting" ? size / 2 : 0;
   for (let row = row0; row <= row1; row++) {
     for (let col = col0; col <= col1; col++) {
-      const dx = Math.max(0, Math.abs(left + (col + 0.5) * size - x) - size / 2);
-      const dy = Math.max(0, Math.abs(top + (row + 0.5) * size - y) - size / 2);
+      const dx = Math.max(0, Math.abs(left + (col + 0.5) * size - x) - margin);
+      const dy = Math.max(0, Math.abs(top + (row + 0.5) * size - y) - margin);
       if (dx * dx + dy * dy <= radius * radius && classify(obs.cells[row * obs.grid + col]!) !== "empty") return false;
     }
   }
@@ -212,7 +216,7 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
   t.unseen += 1;
   const loc = explainMiss(obs, t.x, t.y);
   if (models) {
-    const empty = loc.status === "cell" && loc.kind === "empty" && observedEmptyDisk(obs, t);
+    const empty = loc.status === "cell" && loc.kind === "empty" && observedEmptyDisk(obs, t.x, t.y, t.radius, "intersecting");
     t.emptyViews = empty ? (prior.boundBlob == null ? prior.emptyViews ?? 0 : 0) + 1 : 0;
   }
   if (loc.status === "outside" || (models && loc.kind === "empty" && (t.emptyViews ?? 0) < genesisTask.emptyViews)) {
@@ -240,8 +244,14 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
     t.conflict = true;
   }
   if (models) {
-    if (t.reason === "occlusion" || t.reason === "absence" || t.reason === "no-data") {
-      t.evidence = prior.evidence * (1 - hazard(models, t.reason));
+    t.seenRun = 0;
+    t.gapStep = {
+      context: t.reason === "occlusion" ? "hidden" : "open",
+      observation: t.reason !== "conflict" && observedEmptyDisk(obs, t.x, t.y, 0.5 * matchRadius(prior), "centers")
+        ? "empty" : "none",
+    };
+    if (t.reason !== "conflict") {
+      t.evidence = filterExistence(models, prior.evidence, t.gapStep);
       t.uncertainty = clamp(prior.uncertainty + genesisTask.uncertaintyGrowth);
     }
     const last = prior.forecastInput!;
@@ -256,7 +266,7 @@ export function matchRadius(prior: Track): number {
 }
 
 /** Fixed frame priors: a different binding always starts from the same evidence. */
-function matchTrack(ep: Agent, prior: Track, blob: Blob, obs: Observation): Track {
+export function matchTrack(ep: Agent, prior: Track, blob: Blob, obs: Observation): Track {
   const dx = blob.cx - prior.x;
   const dy = blob.cy - prior.y;
   const flowError = hypot(dx - prior.vx, dy - prior.vy);
@@ -297,7 +307,12 @@ function matchTrack(ep: Agent, prior: Track, blob: Blob, obs: Observation): Trac
     flowError,
     radius: Math.sqrt(blob.area / Math.PI) * (2 * obs.aperture / obs.grid),
   };
-  if (ep.learning) setForecast(t, ep.learning, features(motionSamples));
+  if (ep.learning) {
+    t.seenRun = diskInView(obs, prior.x + prior.vx, prior.y + prior.vy, 0.5 * matchRadius(prior))
+      ? Math.min(20, 1 + (prior.boundBlob == null ? 0 : prior.seenRun ?? 0)) : 0;
+    delete t.gapStep;
+    setForecast(t, ep.learning, features(motionSamples));
+  }
   finishTrack(t);
   return t;
 }

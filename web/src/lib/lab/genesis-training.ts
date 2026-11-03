@@ -61,7 +61,7 @@ export function trainEpisode(
     const closed = book.step(step, before, agent.tracks, (t) => predictMiss(t, obs, learner.models), matchRadius);
     for (const gap of closed) {
       learner.rememberGap({
-        exposure: gap.exposure, last: gap.last, found: labels?.found(gap) ?? gap.found,
+        seen: gap.seen, steps: gap.steps, found: labels?.found(gap) ?? gap.found,
       }, attentionErrors.get(gap.id) ?? null);
     }
     learner.update();

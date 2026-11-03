@@ -1,11 +1,11 @@
 import { hashUnit } from "./math.ts";
 import {
-  causes, fitMotion, fitPermanence, freshModels, motion,
+  fitMotion, fitExistence, freshModels, gapLogLikelihood, motion,
   type GapExample, type Models, type MotionExample,
 } from "./learning.ts";
 
 export type Selection = "uniform" | "attention" | "error";
-export interface Rates { motion: number; permanence: number }
+export interface Rates { motion: number; existence: number }
 
 export function generator(seed: number): () => number {
   let draw = 0;
@@ -36,23 +36,11 @@ export class Replay<T> {
   }
 }
 
-function gapLoss(models: Models, g: GapExample): number {
-  let loss = 0, length = 0;
-  for (const c of causes) {
-    const theta = models.logits[c];
-    const event = Number(!g.found && g.last === c);
-    const softplus = Math.max(theta, 0) + Math.log1p(Math.exp(-Math.abs(theta)));
-    loss += g.exposure[c] * softplus - event * theta;
-    length += g.exposure[c];
-  }
-  return loss / length;
-}
-
 export class Learner {
   readonly models = freshModels();
   readonly movements = new Replay<MotionExample>(256);
   readonly gaps = new Replay<GapExample>(32);
-  readonly updates = { motion: 0, permanence: 0 };
+  readonly updates = { motion: 0, existence: 0 };
   readonly selection: Selection;
   readonly rates: Rates;
   private readonly random: () => number;
@@ -75,7 +63,7 @@ export class Learner {
 
   rememberGap(example: GapExample, attentionError: number | null): void {
     if (this.selection === "attention" && attentionError == null) return;
-    const priority = this.selection === "error" ? gapLoss(this.models, example) : attentionError ?? 0;
+    const priority = this.selection === "error" ? -gapLogLikelihood(this.models, example) / (example.steps.length + example.seen) : attentionError ?? 0;
     this.gaps.add(example, 0.05 + priority);
   }
 
@@ -88,8 +76,8 @@ export class Learner {
       this.updates.motion++;
     }
     if (gap) {
-      fitPermanence(this.models, gap, this.rates.permanence);
-      this.updates.permanence++;
+      fitExistence(this.models, gap, this.rates.existence);
+      this.updates.existence++;
     }
   }
 }

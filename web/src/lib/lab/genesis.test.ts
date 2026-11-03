@@ -39,9 +39,12 @@ test("the disk disappears from the sensor at the scheduled step and remains in t
   }
 });
 
-import { features, fitMotion, fitPermanence, freshModels, GapBook, hazard, motion, type Features } from "./learning.ts";
+import {
+  existenceLogits, features, filterExistence, fitExistence, fitMotion, freshModels, GapBook, gapLogLikelihood,
+  motion, probability, type Features, type GapExample, type GapStep,
+} from "./learning.ts";
 import type { Track } from "./types.ts";
-import { matchRadius, predictMiss } from "./perception.ts";
+import { matchRadius, matchTrack, predictMiss } from "./perception.ts";
 
 test("normalized motion learning converges on a constant displacement", () => {
   const models = freshModels();
@@ -51,23 +54,51 @@ test("normalized motion learning converges on a constant displacement", () => {
   assert.ok(Math.hypot(motion(models, input)[0] - 1.5, motion(models, input)[1] + 0.5) < 1e-8);
 });
 
-test("survival likelihood recovers cause-specific event rates", () => {
+test("a missing observation propagates survival and an empty view updates its posterior", () => {
   const models = freshModels();
-  for (let i = 0; i < 5000; i++) {
-    for (const [c, duration] of [["occlusion", 20], ["absence", 2], ["no-data", 5]] as const) {
-      fitPermanence(models, {
-        exposure: { occlusion: 0, absence: 0, "no-data": 0, [c]: duration }, last: c, found: false,
-      }, 0.01);
-    }
+  models.logits = existenceLogits({ hidden: 0.25, open: 0.5, miss: 0.2 });
+  assert.equal(filterExistence(models, 0.8, { context: "open", observation: "none" }), 0.4);
+  const posterior = filterExistence(models, 0.8, { context: "hidden", observation: "empty" });
+  assert.ok(Math.abs(posterior - 0.12 / (0.12 + 0.4)) < 1e-12);
+});
+
+test("gap likelihood includes detections and marginalizes the unknown time of loss", () => {
+  const models = freshModels();
+  models.logits = existenceLogits({ hidden: 0.25, open: 0.5, miss: 0.2 });
+  const steps: GapStep[] = [
+    { context: "open", observation: "empty" }, { context: "hidden", observation: "none" },
+  ];
+  const detected = (0.5 * 0.8) ** 2;
+  const found = gapLogLikelihood(models, { seen: 2, steps, found: true });
+  const lost = gapLogLikelihood(models, { seen: 2, steps, found: false });
+  assert.ok(Math.abs(found - Math.log(detected * 0.5 * 0.2 * 0.75)) < 1e-12);
+  assert.ok(Math.abs(lost - Math.log(detected * (0.5 + 0.5 * 0.2 * 0.25))) < 1e-12);
+});
+
+test("synthetic gaps recover both disappearance rates and the missed detection probability", () => {
+  const models = freshModels();
+  const records: GapExample[] = [];
+  // 25/100 hidden losses, 30/300 open losses (including 200 prior detections),
+  // and 50 empty views of survivors alongside the 200 detections.
+  for (let i = 0; i < 100; i++) {
+    records.push({ seen: 1, found: i % 4 !== 0, steps: [{ context: "hidden", observation: "none" }] });
+    records.push({ seen: 1, found: i % 10 >= 3, steps: [
+      { context: "open", observation: i % 10 < 8 ? "empty" : "none" },
+    ] });
   }
-  assert.ok(Math.abs(hazard(models, "occlusion") - 0.05) < 1e-6);
-  assert.ok(Math.abs(hazard(models, "absence") - 0.5) < 1e-6);
-  assert.ok(Math.abs(hazard(models, "no-data") - 0.2) < 1e-6);
+  for (let epoch = 1; epoch <= 150; epoch++) {
+    for (const record of records) fitExistence(models, record, 0.04 / Math.sqrt(epoch));
+  }
+  for (const [key, expected] of [["hidden", 0.25], ["open", 0.1], ["miss", 0.2]] as const) {
+    assert.ok(Math.abs(probability(models, key) - expected) < 0.002);
+  }
 });
 
 test("gap outcomes use live bindings, retrospective births, timeout and episode censoring", () => {
-  const track = createEpisode("continuity", 1).agent.tracks[0]!;
-  const advance = (t: Track): Track => ({ ...t, boundBlob: null, unseen: t.unseen + 1, reason: "absence" });
+  const track = { ...createEpisode("continuity", 1).agent.tracks[0]!, seenRun: 6 };
+  const advance = (t: Track): Track => ({ ...t, boundBlob: null, unseen: t.unseen + 1, reason: "conflict",
+    gapStep: { context: "open", observation: "none" },
+  });
   const miss = advance(track);
   for (const outcome of ["live", "birth", "timeout", "censored"]) {
     const book = new GapBook();
@@ -82,11 +113,12 @@ test("gap outcomes use live bindings, retrospective births, timeout and episode 
     const births = outcome === "birth" ? [{ ...track, id: 2, age: 1 }] : [];
     const [record] = book.step(32, [], births, advance, matchRadius);
     assert.equal(record!.found, outcome === "birth");
-    assert.equal(record!.exposure.absence, outcome === "birth" ? 31 : 32);
+    assert.equal(record!.seen, 6);
+    assert.deepEqual(record!.steps, Array(outcome === "birth" ? 31 : 32).fill(miss.gapStep));
   }
 });
 
-test("zero motion and equal initial hazards lose the target behind the wall", () => {
+test("zero motion and the initial existence model lose the target behind the wall", () => {
   let losses = 0;
   for (let seed = 1; seed <= 8; seed++) {
     const ep = createEpisode("continuity", seed, "first-order", freshModels());
@@ -107,20 +139,20 @@ import { generator, Learner, Replay, type Selection } from "./experience.ts";
 import { conditions, trainEpisode, type Condition } from "./genesis-training.ts";
 
 test("bounded experience is FIFO and attention admits only executed-focus experience", () => {
-  const learner = new Learner({ motion: 0.1, permanence: 0.01 }, "attention", 1);
+  const learner = new Learner({ motion: 0.1, existence: 0.01 }, "attention", 1);
   const example = { input: [1, 0, 1, 0, 1] as Features, target: [1, 0] as [number, number] };
-  const gap = { found: true, last: "absence" as const, exposure: { absence: 1, occlusion: 0, "no-data": 0 } };
+  const gap: GapExample = { found: true, steps: [{ context: "open", observation: "empty" }], seen: 1 };
   learner.rememberMotion(example, null);
   learner.rememberGap(gap, null);
   assert.equal(learner.movements.entries.length + learner.gaps.entries.length, 0);
   for (let i = 0; i < 300; i++) {
     learner.rememberMotion({ ...example, target: [i, 0] }, 0);
-    learner.rememberGap({ ...gap, exposure: { ...gap.exposure, absence: i + 1 } }, 0.3);
+    learner.rememberGap({ ...gap, seen: i + 1 }, 0.3);
   }
   assert.equal(learner.movements.entries.length, 256);
   assert.equal(learner.movements.entries[0]!.value.target[0], 44);
   assert.equal(learner.gaps.entries.length, 32);
-  assert.equal(learner.gaps.entries[0]!.value.exposure.absence, 269);
+  assert.equal(learner.gaps.entries[0]!.value.seen, 269);
 });
 
 test("replay draws are reproducible and proportional to insertion priorities", () => {
@@ -138,20 +170,20 @@ test("replay draws are reproducible and proportional to insertion priorities", (
 
 test("every nonempty memory receives exactly one update per training step", () => {
   for (const selection of ["uniform", "attention", "error"] as Selection[]) {
-    const learner = new Learner({ motion: 0.1, permanence: 0.01 }, selection, 3);
+    const learner = new Learner({ motion: 0.1, existence: 0.01 }, selection, 3);
     learner.update();
-    assert.deepEqual(learner.updates, { motion: 0, permanence: 0 });
+    assert.deepEqual(learner.updates, { motion: 0, existence: 0 });
     learner.rememberMotion({ input: [0, 0, 0, 0, 1], target: [0, 1] }, 0);
     learner.update();
-    learner.rememberGap({ exposure: { absence: 1, occlusion: 0, "no-data": 0 }, last: "absence", found: false }, 0);
+    learner.rememberGap({ seen: 1, steps: [{ context: "open", observation: "empty" }], found: false }, 0);
     learner.update();
-    assert.deepEqual(learner.updates, { motion: 2, permanence: 1 });
+    assert.deepEqual(learner.updates, { motion: 2, existence: 1 });
   }
 });
 
 test("only the oracle training condition requests privileged labels", () => {
   for (const condition of Object.keys(conditions) as Condition[]) {
-    const learner = new Learner({ motion: 0.1, permanence: 0.01 }, conditions[condition].selection, 1);
+    const learner = new Learner({ motion: 0.1, existence: 0.01 }, conditions[condition].selection, 1);
     const run = () => trainEpisode(learner, condition, "vanish", 1, () => { throw Error("label hook"); });
     if (condition === "oracle") assert.throws(run, /label hook/);
     else run();
@@ -164,7 +196,7 @@ test("tuning recovers the exact number of successes across post-training checkpo
   const curve = checkpoints.map((_, i) => ({
     accuracy: i === 0 ? 1 : i === 1 ? 3 / (2 * 20) : 0,
     retention: i === 0 ? 1 : i === 1 ? 3 / 20 : 0, ghostFree: i === 0 ? 1 : 0,
-    untracked: 0, motionError: 0, occlusion: 0.28, absence: 0.28, noData: 0.28,
+    untracked: 0, motionError: 0, hidden: 0.28, open: 0.28, miss: 0.5,
   }));
   assert.equal(tuningAreaUnits, (checkpoints.length - 1) * 2 * 20);
   assert.equal(Math.round(area(curve) * tuningAreaUnits), 3);
@@ -182,7 +214,7 @@ test("bootstrap and strict paired thresholds preserve both directions and zero b
 });
 
 test("a seeded first-order training run reproduces its held-out learning curve", () => {
-  const run = () => trainingCurve("first-order", 701, { motion: 0.03, permanence: 0.003 }, [0, 1],
+  const run = () => trainingCurve("first-order", 701, { motion: 0.03, existence: 0.003 }, [0, 1],
     (models) => evaluate(models, "first-order", 3001, 1));
   assert.deepEqual(run(), run());
 });
@@ -206,7 +238,7 @@ test("oracle requires the original surviving object within the closing predictio
 test("hand-set controls are evaluated without learning or parameter drift", () => {
   for (const id of ["ideal", "keep-all"] as const) {
     const expected = referenceModel(id);
-    const curve = controlCurve(id, 701, { motion: 1, permanence: 0.1 }, [0, 4], 3001, 2);
+    const curve = controlCurve(id, 701, { motion: 1, existence: 0.1 }, [0, 4], 3001, 2);
     assert.deepEqual(curve[0], curve[1]);
     assert.deepEqual(curve[1]!.weights, expected.weights.flat());
     assert.deepEqual(curve[1]!.logits, Object.values(expected.logits));
@@ -242,6 +274,44 @@ test("reference controls predict the measured baseline without a scenario-specif
     assert.deepEqual(models.weights, [[0, 0, 1, 0, 0], [0, 0, 0, 1, 0]]);
     assert.deepEqual(motion(models, [1, 2, -3, 4, 1]), [-3, 4]);
   }
+});
+
+test("empty evidence uses visible cell centers inside the prediction disk on every miss", () => {
+  const models = freshModels();
+  const ep = createEpisode("continuity", 3001, "first-order", models);
+  const prior = ep.agent.tracks[0]!;
+  const obs = { gazeX: prior.x, gazeY: prior.y, aperture: 12, grid: 12,
+    cells: Array.from({ length: 144 }, () => ({ hue: 0, saturation: 0, lightness: 0 })),
+  };
+  const first = predictMiss(prior, obs, models);
+  assert.equal(first.reason, "no-data");
+  assert.deepEqual(first.gapStep, { context: "open", observation: "empty" });
+  assert.equal(predictMiss(prior, { ...obs, gazeX: prior.x - 5 }, models).gapStep!.observation, "none");
+  // The cell at (7,5) intersects the radius-8 disk but its center is outside.
+  obs.cells[8 * 12 + 9]!.lightness = 50;
+  assert.equal(predictMiss(prior, obs, models).gapStep!.observation, "empty");
+  obs.cells[6 * 12 + 6]!.lightness = 50;
+  assert.deepEqual(predictMiss(prior, obs, models).gapStep, { context: "hidden", observation: "none" });
+  obs.cells[6 * 12 + 6]!.saturation = 50;
+  const conflict = predictMiss(prior, obs, models);
+  assert.equal(conflict.reason, "conflict");
+  assert.deepEqual(conflict.gapStep, { context: "open", observation: "none" });
+  assert.equal(conflict.evidence, prior.evidence);
+});
+
+test("only consecutive matches with the whole forecast in view count towards the capped seen run", () => {
+  const models = freshModels();
+  const ep = createEpisode("continuity", 3001, "first-order", models).agent;
+  let track = ep.tracks[0]!;
+  const blob = ep.blobs[track.boundBlob!]!;
+  const obs = { gazeX: track.x, gazeY: track.y, aperture: 20, cells: ep.cells, grid: ep.grid };
+  for (let i = 1; i <= 25; i++) {
+    track = matchTrack(ep, track, blob, obs);
+    assert.equal(track.seenRun, Math.min(20, i));
+  }
+  const miss = predictMiss(track, obs, models);
+  assert.equal(matchTrack(ep, miss, blob, obs).seenRun, 1);
+  assert.equal(matchTrack(ep, track, blob, { ...obs, gazeX: track.x + 15 }).seenRun, 0);
 });
 
 test("confirmed absence requires three uninterrupted observations of the whole empty disk", () => {
@@ -289,8 +359,9 @@ test("the task and oracle settings selected on the design seeds are frozen", () 
     trainingSteps: 80, checkpoints: [0, 4, 8, 16, 32, 64],
     curriculum: ["continuity", "vanish", "binding", "nursery", "continuity", "binding", "nursery"],
     uncertaintyGrowth: 0.03, emptyViews: 3, ghostDelay: 20, outdoorFirst: 12, outdoorLast: 35,
-    keepAllHazard: 0.001, idealHazards: { occlusion: 0.005, absence: 0.5, "no-data": 0.03 },
-    oracleRates: { motion: 0.03, permanence: 0.003 }, controlFloor: 0.9, controlCeiling: 0.75,
+    keepAllExistence: { hidden: 0.001, open: 0.001, miss: 0.999 },
+    idealExistence: { hidden: 0.001, open: 0.02, miss: 0.1 },
+    oracleRates: { motion: 0.03, existence: 0.003 }, controlFloor: 0.9, controlCeiling: 0.75,
   });
 });
 

@@ -8,9 +8,9 @@ export const genesisTask = {
   ghostDelay: 20,
   outdoorFirst: 12,
   outdoorLast: 35,
-  keepAllHazard: 0.001,
-  idealHazards: { occlusion: 0.005, absence: 0.5, "no-data": 0.03 },
-  oracleRates: { motion: 0.03, permanence: 0.003 },
+  keepAllExistence: { hidden: 0.001, open: 0.001, miss: 0.999 },
+  idealExistence: { hidden: 0.001, open: 0.02, miss: 0.1 },
+  oracleRates: { motion: 0.03, existence: 0.003 },
   controlCeiling: 0.75,
   controlFloor: 0.9,
 } as const;

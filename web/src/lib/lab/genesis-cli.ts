@@ -5,7 +5,7 @@ import { conditions, type Condition } from "./genesis-training.ts";
 import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
 // Selected on the frozen 64-episode task using first-order runs 501–510 and evaluation seeds 2001–2020.
-const selectedRates = { motion: 0.03, permanence: 0.03 };
+const selectedRates = { motion: 0.03, existence: 0.03 };
 
 const runs = 30;
 const evalSeed = 1001;
@@ -49,7 +49,7 @@ if (ready) {
 }
 
 console.log(`Прогонов: ${runs}. Оценочные зёрна 1001–1020. Интервалы 95% по прогонам.`);
-console.log(`Шаги обучения оракула: ${decimal(genesisTask.oracleRates.motion)} / ${decimal(genesisTask.oracleRates.permanence)}. Участники: ${decimal(selectedRates.motion)} / ${decimal(selectedRates.permanence)}.`);
+console.log(`Шаги обучения оракула: ${decimal(genesisTask.oracleRates.motion)} / ${decimal(genesisTask.oracleRates.existence)}. Участники: ${decimal(selectedRates.motion)} / ${decimal(selectedRates.existence)}.`);
 console.table(Array.from(experiments.keys()).flatMap((id) => checkpoints.map((n, i) => {
   const points = curve(id).map((r) => r[i]!);
   const avg = (key: keyof Point) => decimal(mean(points.map((p) => p[key])));
@@ -57,8 +57,7 @@ console.table(Array.from(experiments.keys()).flatMap((id) => checkpoints.map((n,
     Условие: label(id), Эпизоды: n, "Точность [95%]": interval(accuracy(id, i)),
     "Удержание A": avg("retention"), "Без призрака": avg("ghostFree"),
     "Без трека": points.reduce((sum, p) => sum + p.untracked, 0),
-    "Ошибка движения": avg("motionError"), "h стены": avg("occlusion"),
-    "h пустоты": avg("absence"), "h вне окна": avg("noData"),
+    "Ошибка движения": avg("motionError"), λ_hidden: avg("hidden"), λ_open: avg("open"), m: avg("miss"),
   };
 })));
 
@@ -76,4 +75,4 @@ if (ready) {
   console.log("Альтернативное объяснение правилами первого порядка:", comparisons[2] === "faster" ? "исключено" : "не исключено");
   if (comparisons[2] === "slower") console.log("Контур замедляет обучение относительно сильного первого порядка.");
 }
-console.log("Обучаются движение и постоянство. Заданы классификация клеток, геометрия сенсора, эфферентная копия, оценка освещения, связывание и оттенки, правила внимания и веса E.");
+console.log("Обучаются модели движения и существования объекта. Заданы классификация клеток, геометрия сенсора, эфферентная копия, оценка освещения, связывание и оттенки, правила внимания и веса E.");
