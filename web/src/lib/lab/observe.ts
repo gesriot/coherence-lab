@@ -103,7 +103,8 @@ export function extractBlobs(obs: Observation): Blob[] {
     if (members.length === 0) continue;
     let sx = 0;
     let sy = 0;
-    let sh = 0;
+    let sinHue = 0;
+    let cosHue = 0;
     let minC = n;
     let maxC = 0;
     let minR = n;
@@ -113,7 +114,9 @@ export function extractBlobs(obs: Observation): Blob[] {
       const c = idx % n;
       sx += left + (c + 0.5) * cell;
       sy += top + (r + 0.5) * cell;
-      sh += obs.cells[idx]!.hue;
+      const angle = obs.cells[idx]!.hue * Math.PI / 180;
+      sinHue += Math.sin(angle);
+      cosHue += Math.cos(angle);
       if (c < minC) minC = c;
       if (c > maxC) maxC = c;
       if (r < minR) minR = r;
@@ -125,7 +128,7 @@ export function extractBlobs(obs: Observation): Blob[] {
       index: blobs.length,
       cx: sx / area,
       cy: sy / area,
-      hue: sh / area,
+      hue: wrapHue(Math.atan2(sinHue, cosHue) * 180 / Math.PI),
       area,
       fill: area / box,
     });

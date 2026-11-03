@@ -1,18 +1,5 @@
-import { WORLD, wrapHue } from "./math.ts";
+import { WORLD, hashUnit, wrapHue } from "./math.ts";
 import type { Occluder, ScenarioId, Shape, SimObject, World } from "./types.ts";
-
-function obj(
-  id: string,
-  shape: Shape,
-  hue: number,
-  x: number,
-  y: number,
-  vx: number,
-  vy: number,
-  r: number,
-): SimObject {
-  return { id, shape, hue, x, y, vx, vy, r };
-}
 
 export function hiddenByOccluder(o: SimObject, occ: Occluder): boolean {
   const cx = Math.max(occ.x, Math.min(o.x, occ.x + occ.w));
@@ -36,6 +23,20 @@ export function contains(o: SimObject, x: number, y: number): boolean {
 }
 
 export function makeWorld(scenario: ScenarioId, seed: number): World {
+  let draw = 0;
+  const jitter = () => 2 * hashUnit(seed + 104729 * ++draw) - 1;
+  function obj(
+    id: string, shape: Shape, hue: number, x: number, y: number,
+    vx: number, vy: number, r: number,
+  ): SimObject {
+    return {
+      id, shape, hue, r,
+      x: x + 2 * jitter(),
+      y: y + 2 * jitter(),
+      vx: vx * (1 + 0.08 * jitter()) + 0.025 * jitter(),
+      vy: vy * (1 + 0.08 * jitter()) + 0.025 * jitter(),
+    };
+  }
   const base = {
     seed,
     t: 0,

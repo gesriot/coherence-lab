@@ -56,6 +56,7 @@ export interface Episode {
   predictedDrop: number;
   predictedObserved: boolean;
   selfError: number | null;
+  iterationBudget: number;
   iterationsUsed: number;
   energyTrace: number[];
   history: { step: number; total: number }[];
@@ -180,10 +181,10 @@ function perceive(ep: Episode, blobs: Blob[], obs: ReturnType<typeof observe>): 
     t.x += t.vx;
     t.y += t.vy;
   }
-  const velocityLatched = new Set<number>();
+  const sampled = new Set<number>();
 
   let used = 0;
-  for (let iter = 0; iter < BUDGET; iter++) {
+  for (let iter = 0; iter < ep.iterationBudget; iter++) {
     used++;
     const claimed = new Set<number>();
     const order = [...ep.tracks].sort((a, b) => b.evidence - a.evidence);
@@ -211,7 +212,7 @@ function perceive(ep: Episode, blobs: Blob[], obs: ReturnType<typeof observe>): 
         const alpha = 0.42 + iter * 0.08;
         t.x = t.x * (1 - alpha) + blob.cx * alpha;
         t.y = t.y * (1 - alpha) + blob.cy * alpha;
-        if (!velocityLatched.has(t.id)) {
+        if (!sampled.has(t.id)) {
           const obsVx = blob.cx - from.x;
           const obsVy = blob.cy - from.y;
           t.vx = from.vx * 0.35 + obsVx * 0.65;
@@ -222,32 +223,21 @@ function perceive(ep: Episode, blobs: Blob[], obs: ReturnType<typeof observe>): 
             t.vy = (t.vy / speed) * 3.2;
           }
           t.flowError = hypot(obsVx - from.vx, obsVy - from.vy);
-          velocityLatched.add(t.id);
+          const intrinsic = wrapHue(blob.hue - ep.lightEstimate);
+          const hueResidual = hueDelta(wrapHue(t.hue + ep.lightEstimate), blob.hue);
+          t.hue = lerpHue(t.hue, intrinsic, 0.32);
+          t.fill = t.fill * 0.65 + blob.fill * 0.35;
+          t.evidence = clamp(t.evidence * 0.45 + 0.55);
+          t.prediction = clamp(1 - bestCost / 1.28);
+          t.uncertainty = clamp(t.uncertainty * 0.62 + (bestCost / 1.28) * 0.22);
+          t.reason = hueResidual > 32 ? "noise" : "none";
+          sampled.add(t.id);
         }
-        const intrinsic = wrapHue(blob.hue - ep.lightEstimate);
-        const hueResidual = hueDelta(wrapHue(t.hue + ep.lightEstimate), blob.hue);
-        t.hue = lerpHue(t.hue, intrinsic, 0.32);
-        t.fill = t.fill * 0.65 + blob.fill * 0.35;
-        t.evidence = clamp(t.evidence * 0.45 + 0.55);
-        t.prediction = clamp(1 - bestCost / 1.28);
-        t.uncertainty = clamp(t.uncertainty * 0.62 + (bestCost / 1.28) * 0.22);
         t.source = "observed";
         t.unseen = 0;
         t.boundBlob = best;
-        t.reason = hueResidual > 32 ? "noise" : "none";
         t.conflict = runner < bestCost * 1.22 && runner < 1.28;
       }
-    }
-
-    for (const t of ep.tracks) {
-      if (t.boundBlob == null || t.uncertainty > 0.4) continue;
-      const blob = blobs.find((b) => b.index === t.boundBlob);
-      if (!blob) continue;
-      let residual = wrapHue(blob.hue - t.hue) - ep.lightEstimate;
-      residual = ((residual + 540) % 360) - 180;
-      ep.lightEstimate += residual * 0.08;
-      if (ep.lightEstimate > 40) ep.lightEstimate = 40;
-      if (ep.lightEstimate < -40) ep.lightEstimate = -40;
     }
 
     const unexplained =
@@ -261,6 +251,17 @@ function perceive(ep: Episode, blobs: Blob[], obs: ReturnType<typeof observe>): 
     const settled =
       !ep.tracks.some((t) => t.conflict) && unexplained === 0 && meanU < 0.3 && ep.tracks.length > 0;
     if (settled && iter >= 1) break;
+  }
+
+  for (const t of ep.tracks) {
+    if (t.boundBlob == null || t.uncertainty > 0.4) continue;
+    const blob = blobs.find((b) => b.index === t.boundBlob);
+    if (!blob) continue;
+    let residual = wrapHue(blob.hue - t.hue) - ep.lightEstimate;
+    residual = ((residual + 540) % 360) - 180;
+    ep.lightEstimate += residual * 0.08;
+    if (ep.lightEstimate > 40) ep.lightEstimate = 40;
+    if (ep.lightEstimate < -40) ep.lightEstimate = -40;
   }
 
   ep.iterationsUsed = used;
@@ -571,6 +572,7 @@ export function createEpisode(scenario: ScenarioId, seed: number): Episode {
     predictedDrop: 0,
     predictedObserved: false,
     selfError: null,
+    iterationBudget: BUDGET,
     iterationsUsed: 0,
     energyTrace: [],
     history: [],
@@ -794,7 +796,7 @@ export function snapshot(ep: Episode, ablation: Ablation): ViewState {
     coupling: ep.coupling,
     memoryFrames: ep.memoryFrames,
     iterationsUsed: ep.iterationsUsed,
-    iterationBudget: BUDGET,
+    iterationBudget: ep.iterationBudget,
     evaluator: {
       initialTrackId: ep.initialTrackId,
       retained,

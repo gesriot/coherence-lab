@@ -18,7 +18,7 @@ export interface BenchReport {
   summary: string;
 }
 
-const SEEDS = [1, 2, 3, 4, 5, 6, 7];
+const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 function roll(scenario: ScenarioId, ablation: Ablation, seed: number, steps: number, mutate?: (ep: Episode, i: number, cfg: LabConfig) => void) {
   const ep = createEpisode(scenario, seed);
