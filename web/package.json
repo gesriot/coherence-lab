@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "sensorimotor:feasibility": "node src/lib/lab/sensorimotor-feasibility-cli.ts",
     "genesis:feasibility": "node src/lib/lab/feasibility-cli.ts",
     "genesis:tune": "node src/lib/lab/genesis-tune.ts",
     "genesis": "node src/lib/lab/genesis-cli.ts",

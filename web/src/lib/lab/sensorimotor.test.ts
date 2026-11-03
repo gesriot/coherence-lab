@@ -87,3 +87,11 @@ test("only oracle updates request a label and gain training preserves the first-
     assert.deepEqual(models.logits, logits);
   }
 });
+
+import { designGainControls } from "./sensorimotor-feasibility.ts";
+
+test("the sensorimotor design runner rejects participant conditions before running controls", () => {
+  for (const id of ["full", "first-order", "no-protocol", "strong-first-order", "keep-all", "constructor"]) {
+    assert.throws(() => designGainControls(["ideal", id]), /Недопустимое условие/);
+  }
+});

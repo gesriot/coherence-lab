@@ -8,6 +8,10 @@ export const sensorimotorTask = {
   minGain: 0.5,
   maxGain: 2,
   memory: 256,
+  checkpoints: [0, 4, 8, 16, 32, 64],
+  rates: [0.003, 0.01, 0.03, 0.1],
+  evaluationCount: 20,
+  design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
 } as const;
 
 export function bodyForRun(seed: number): Vector {
