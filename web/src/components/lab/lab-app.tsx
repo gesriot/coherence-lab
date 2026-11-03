@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Pause, Play, RotateCcw, StepForward } from "lucide-react";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "@/lib/lab/agent";
 import { criterion, runBench, type BenchReport } from "@/lib/lab/bench";
-import type { Ablation, AttentionReason, ScenarioId, SourceKind, UncertaintyReason, ViewState } from "@/lib/lab/types";
+import type { Ablation, Agreement, AttentionReason, ScenarioId, SourceKind, UncertaintyReason, ViewState } from "@/lib/lab/types";
 import { Stage } from "@/components/lab/stage";
 
 const SCENARIOS: { id: ScenarioId; label: string; hint: string }[] = [
   {
     id: "continuity",
     label: "Непрерывность",
-    hint: "Диск A уходит в стену. Полный контур хранит его номер и смотрит на прогноз. Взгляд за яркостью – нет.",
+    hint: "Диск A уходит за стену. После его появления оценщик проверяет, сохранился ли номер трека.",
   },
   {
     id: "binding",
@@ -19,12 +19,12 @@ const SCENARIOS: { id: ScenarioId; label: string; hint: string }[] = [
   {
     id: "conflict",
     label: "Конфликт",
-    hint: "Два близких оттенка в стороне от большого квадрата. Модель внимания уходит их проверять.",
+    hint: "Два объекта похожих оттенков находятся в стороне от большого квадрата. Оценщик проверяет, получат ли они разные треки.",
   },
   {
     id: "nursery",
     label: "Свободная сцена",
-    hint: "Три тела и невысокая стена. Удобно крутить шум, фиксацию взгляда и повтор записи.",
+    hint: "Три тела и невысокая стена. Удобно менять шум и проверять, что происходит при фиксации взгляда или повторе записи.",
   },
 ];
 
@@ -36,10 +36,16 @@ const ABLATIONS: { id: Ablation; label: string }[] = [
   { id: "dummy-memory", label: "Лишняя память" },
 ];
 
+const AGREEMENT: Record<Agreement, string> = {
+  settled: "согласовано",
+  competing: "гипотезы конкурируют",
+  underdetermined: "недоопределено",
+};
+
 const SOURCE: Record<SourceKind, string> = {
   observed: "наблюдение",
   predicted: "прогноз",
-  imagined: "воображение",
+  remembered: "воспоминание",
   mixed: "смесь",
 };
 
@@ -57,11 +63,15 @@ const ATTENTION: Record<AttentionReason, string> = {
   verify: "проверить прогноз",
   uncertainty: "снять неопределённость",
   explore: "обход",
-  salience: "за яркостью",
+  salience: "к самому крупному пятну",
   pursue: "сопровождение",
   pinned: "взгляд зафиксирован",
   idle: "ожидание",
 };
+
+function points(delta: number): string {
+  return (delta * 100).toLocaleString("ru-RU", { maximumFractionDigits: 0, signDisplay: "exceptZero" });
+}
 
 function pct(value: number | null): string {
   if (value == null) return "–";
@@ -69,7 +79,7 @@ function pct(value: number | null): string {
 }
 
 function fresh(scenario: ScenarioId, seed: number, ablation: Ablation): { episode: Episode; view: ViewState } {
-  const episode = createEpisode(scenario, seed);
+  const episode = createEpisode(scenario, seed, ablation);
   return { episode, view: snapshot(episode, ablation) };
 }
 
@@ -122,7 +132,7 @@ export function LabApp() {
   }, [running, speed]);
 
   function reset(nextScenario = scenario, nextSeed = seed, nextAblation = ablation) {
-    const episode = createEpisode(nextScenario, nextSeed);
+    const episode = createEpisode(nextScenario, nextSeed, nextAblation);
     episodeRef.current = episode;
     setView(snapshot(episode, nextAblation));
   }
@@ -144,7 +154,8 @@ export function LabApp() {
     setView(snapshot(episode, current.ablation));
   }
 
-  const target = view.evaluator.objects[0];
+  const firstOrder = bench?.rows.find((row) => row.id === "first-order");
+  const schemaEnabled = ablation === "full" || ablation === "record-only";
   const retainedLabel =
     view.evaluator.retained == null ? "ещё рано" : view.evaluator.retained ? "удержана" : "потеряна";
   const scenarioMeta = SCENARIOS.find((item) => item.id === scenario)!;
@@ -152,7 +163,7 @@ export function LabApp() {
     ? "Связь действие–вход разорвана"
     : pinGaze
       ? "Взгляд зафиксирован"
-      : inject
+      : inject && schemaEnabled
         ? "Уверенность подменена"
         : ablation === "full"
           ? "Контур замкнут"
@@ -160,7 +171,7 @@ export function LabApp() {
             ? "Модель не влияет"
             : ablation === "dummy-memory"
               ? "Память без модели"
-              : "Модель снята";
+              : ablation === "first-order" ? "Первый порядок" : "Без модели";
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-5 sm:px-6">
@@ -176,7 +187,7 @@ export function LabApp() {
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <p className="rounded-full border border-line bg-surface px-3 py-2 font-mono text-xs text-fg">{status}</p>
           <p className="font-mono text-xs text-muted tabular-nums">
-            шаг {view.step} · итерации {view.iterationsUsed}/{view.iterationBudget} · {view.attention.agreement}
+            шаг {view.step} · итерации {view.iterationsUsed}/{view.iterationBudget} · {AGREEMENT[view.attention.agreement]}
           </p>
         </div>
       </header>
@@ -199,8 +210,8 @@ export function LabApp() {
         <section className="lab-card overflow-hidden lg:col-span-3">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
             <div>
-              <h2 className="font-display text-2xl">Мир оценщика</h2>
-              <p className="text-xs text-muted">Агент этих подписей не получает. Клик фиксирует его взгляд.</p>
+              <h2 className="font-display text-2xl">{showTruth ? "Мир оценщика" : "Вход агента"}</h2>
+              <p className="text-xs text-muted">{showTruth ? "Подписи объектов доступны оценщику." : "Цветные клетки показывают измерения в текущем окне."} Щелчок фиксирует взгляд.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="pill-on" onClick={() => setRunning((value) => !value)}>
@@ -263,7 +274,7 @@ export function LabApp() {
             <span>квадрат – сенсорное окно</span>
             <span>пунктир – гипотеза</span>
             <span>кольцо – следующий взгляд</span>
-            <span>штрих – стена</span>
+            <span>штриховка – стена</span>
           </div>
         </section>
 
@@ -271,7 +282,7 @@ export function LabApp() {
           <section className="lab-card p-4">
             <div className="mb-3 flex items-baseline justify-between gap-3">
               <h2 className="font-display text-2xl">Пузырь настоящего</h2>
-              <p className="font-mono text-xs text-muted">{view.tracks.filter((track) => track.inWorkspace).length}/3 в окне</p>
+              <p className="font-mono text-xs text-muted">{view.tracks.filter((track) => track.inWorkspace).length}/{view.workspaceCapacity} в сцене</p>
             </div>
             {view.tracks.length === 0 ? (
               <p className="text-sm text-muted">Сцена пуста. Контур ещё не связал измерения в сущности.</p>
@@ -302,7 +313,7 @@ export function LabApp() {
                       />
                     </div>
                     <p className="mt-1 font-mono text-xs text-muted tabular-nums">
-                      увер. {track.confidence.toFixed(2)} · неозн. {track.uncertainty.toFixed(2)} · свидет.{" "}
+                      увер. {track.confidence.toFixed(2)} · неопр. {track.uncertainty.toFixed(2)} · свидет.{" "}
                       {track.evidence.toFixed(2)}
                     </p>
                   </li>
@@ -355,7 +366,7 @@ export function LabApp() {
           <div>
             <h2 className="font-display text-2xl">Когерентность</h2>
             <p className="max-w-xl text-sm text-muted">
-              Ниже – не «больше сознания». Это ошибка согласования. Тишина при живых измерениях штрафуется.
+              Меньшее значение не означает «больше сознания»: это лишь ошибка согласования. Пустая сцена при непустом входе штрафуется.
             </p>
           </div>
           <p className="font-mono text-sm text-accent tabular-nums">E {view.energy.total.toFixed(2)}</p>
@@ -417,16 +428,19 @@ export function LabApp() {
             ))}
           </div>
           <label className="mt-4 flex items-center gap-3 text-sm text-muted">
-            Семя
+            Зерно генератора
             <input
               type="number"
               value={seed}
+              required
+              onFocus={(event) => event.currentTarget.select()}
               min={1}
               max={999}
               className="min-h-11 w-24 rounded-full border border-line bg-bg px-3 font-mono text-fg"
               onChange={(event) => {
-                const next = Number(event.target.value);
-                if (!Number.isFinite(next)) return;
+                const value = event.currentTarget.valueAsNumber;
+                if (!Number.isFinite(value)) return;
+                const next = Math.max(1, Math.min(999, Math.trunc(value)));
                 setSeed(next);
                 reset(scenario, next, ablation);
               }}
@@ -452,7 +466,7 @@ export function LabApp() {
 
         <div className="lab-card p-4">
           <h2 className="font-display text-2xl">Вмешательства</h2>
-          <p className="mt-1 text-sm text-muted">Меняют причину, а не подпись. Можно переключать посреди эпизода.</p>
+          <p className="mt-1 text-sm text-muted">Режимы можно переключать во время эпизода. Изменение вступает в силу на следующем шаге.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {ABLATIONS.map((item) => (
               <button
@@ -469,7 +483,7 @@ export function LabApp() {
             <button type="button" className={pinGaze ? "pill-on" : "pill"} onClick={() => setPinGaze((value) => !value)}>
               Фиксация взгляда
             </button>
-            <button type="button" className={inject ? "pill-on" : "pill"} onClick={() => setInject((value) => !value)}>
+            <button type="button" disabled={!schemaEnabled} className={inject && schemaEnabled ? "pill-on" : "pill"} onClick={() => setInject((value) => !value)}>
               Подменить уверенность
             </button>
             <button type="button" className={replay ? "pill-on" : "pill"} onClick={() => setReplay((value) => !value)}>
@@ -488,7 +502,6 @@ export function LabApp() {
               onChange={(event) => setExtraNoise(Number(event.target.value))}
             />
           </label>
-          <p className="mt-3 text-sm leading-relaxed text-fg">{target ? scenarioMeta.hint : ""}</p>
         </div>
       </section>
 
@@ -508,8 +521,9 @@ export function LabApp() {
             <thead className="text-xs tracking-wide text-muted uppercase">
               <tr>
                 <th className="py-2 pr-3 font-medium">Условие</th>
-                <th className="py-2 pr-3 font-medium">Идентичность</th>
-                <th className="py-2 pr-3 font-medium">Пара найдена</th>
+                <th className="py-2 pr-3 font-medium">Удержание A</th>
+                <th className="py-2 pr-3 font-medium">Пара различена</th>
+                <th className="py-2 pr-3 font-medium">Разница с первым порядком, п. п. (A / пара)</th>
                 <th className="py-2 pr-3 font-medium">Ошибка самомодели</th>
                 <th className="py-2 font-medium">Ошибка действия</th>
               </tr>
@@ -524,10 +538,15 @@ export function LabApp() {
                   <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.retention)}</td>
                   <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.pair)}</td>
                   <td className="py-2 pr-3 font-mono tabular-nums">
-                    {row.selfError == null ? "–" : row.selfError.toFixed(2)}
+                    {row.retention == null || row.pair == null || firstOrder?.retention == null || firstOrder.pair == null
+                      ? "–"
+                      : `${points(row.retention - firstOrder.retention)} / ${points(row.pair - firstOrder.pair)}`}
+                  </td>
+                  <td className="py-2 pr-3 font-mono tabular-nums">
+                    {row.selfError == null ? "–" : row.selfError.toFixed(3).replace(".", ",")}
                   </td>
                   <td className="py-2 font-mono tabular-nums">
-                    {row.actionError == null ? "–" : row.actionError.toFixed(2)}
+                    {row.actionError == null ? "–" : row.actionError.toFixed(3).replace(".", ",")}
                   </td>
                 </tr>
               ))}
@@ -546,8 +565,8 @@ export function LabApp() {
             </dd>
           </div>
           <div className="rounded-lg border border-line px-3 py-2">
-            <dt className="text-xs text-muted">Квалиа</dt>
-            <dd>строки PASS нет</dd>
+            <dt className="text-xs text-muted">Феноменальное сознание</dt>
+            <dd>не установлено</dd>
           </div>
         </dl>
       </section>
@@ -561,7 +580,7 @@ function EnergyRow({ label, value }: { label: string; value: number | null }) {
     <div>
       <div className="mb-1 flex justify-between text-xs text-muted">
         <span>{label}</span>
-        <span className="font-mono tabular-nums">{value == null ? "снята" : value.toFixed(2)}</span>
+        <span className="font-mono tabular-nums">{value == null ? "–" : value.toFixed(2)}</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-bg">
         <div className="h-full bg-accent" style={{ width: value == null ? "0%" : `${Math.round(shown * 100)}%` }} />

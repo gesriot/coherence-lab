@@ -142,7 +142,7 @@ function explainMiss(obs: Observation, x: number, y: number): Location {
 
 function finishTrack(t: Track): void {
   const src =
-    t.source === "imagined" ? 0.55 : t.source === "predicted" ? 0.78 : t.source === "mixed" ? 0.7 : 1;
+    t.source === "remembered" ? 0.55 : t.source === "predicted" ? 0.78 : t.source === "mixed" ? 0.7 : 1;
   t.confidence = clamp(t.evidence * (1 - t.uncertainty * 0.85) * src);
 }
 
@@ -168,7 +168,7 @@ function predictMiss(prior: Track, obs: Observation): Track {
   t.unseen += 1;
   const loc = explainMiss(obs, t.x, t.y);
   if (loc.status === "outside") {
-    t.source = t.unseen > 10 ? "imagined" : "predicted";
+    t.source = t.unseen > 10 ? "remembered" : "predicted";
     t.uncertainty = clamp(t.uncertainty + 0.08);
     t.evidence = clamp(t.evidence - 0.03);
     t.reason = "no-data";
@@ -355,7 +355,7 @@ function explore(cycle: number): Decision {
     aperture: WIDE,
     reason: "explore",
     focusId: null,
-    note: "В окне пусто. Обход по четырём точкам, без модели того, что искать.",
+    note: "Перехожу к следующей из четырёх точек обхода.",
   };
 }
 
@@ -364,7 +364,7 @@ function priority(t: Track, gazeX: number, gazeY: number, aperture: number): num
   if (t.reason === "occlusion" || t.conflict) score += 1.05;
   if (t.reason === "absence") score += 0.55;
   if (t.reason === "no-data") score += 0.22;
-  if (t.source === "predicted" || t.source === "imagined") score += 0.18;
+  if (t.source === "predicted" || t.source === "remembered") score += 0.18;
   const inside = hypot(t.x - gazeX, t.y - gazeY) <= aperture;
   if (inside && (t.uncertainty > 0.3 || t.conflict)) score += 0.35;
   if (t.source === "observed" && t.uncertainty < 0.22 && t.unseen === 0 && !t.conflict) score -= 0.2;
@@ -383,7 +383,7 @@ function schemaDecision(ep: Agent): Decision {
       aperture: held.conflict ? NARROW : 18,
       reason,
       focusId: held.id,
-      note: "Проверка ещё не закрыта – не переключаюсь на более яркое.",
+      note: "Проверка ещё не закончена. Удерживаю взгляд на выбранном треке.",
     };
   }
 
@@ -412,7 +412,7 @@ function schemaDecision(ep: Agent): Decision {
   }
   if (best && bestScore > 0.42) {
     const reason: AttentionReason =
-      best.reason === "occlusion" || best.source === "predicted" || best.source === "imagined"
+      best.reason === "occlusion" || best.source === "predicted" || best.source === "remembered"
         ? "verify"
         : "uncertainty";
     return {
@@ -424,7 +424,7 @@ function schemaDecision(ep: Agent): Decision {
       note:
         reason === "verify"
           ? "Прогноз не подтверждён взглядом. Иду туда, где гипотеза должна проявиться."
-          : "Неопределённость выше порога. Смотрю на неё, а не на самый яркий кусок.",
+          : "Неопределённость выше порога. Перевожу взгляд на этот трек.",
     };
   }
 
@@ -480,7 +480,7 @@ function salienceDecision(ep: Agent, useMemory: boolean): Decision {
   const blob = largest ?? [...ep.salienceFrames].reverse().find((patch) => patch != null);
   if (!blob) {
     const wander = explore(ep.cycle);
-    return { ...wander, reason: "salience", note: "Без модели внимания: в окне пусто, иду по дуге обхода." };
+    return { ...wander, reason: "salience", note: "В окне пусто. Перехожу к следующей точке обхода." };
   }
   return {
     x: clamp(blob.cx, 4, 96),
@@ -588,7 +588,7 @@ function selfPrediction(ep: Agent, decision: Decision): { observed: boolean; dro
   return { observed, drop };
 }
 
-export function createAgent(obs: Observation): Agent {
+export function createAgent(obs: Observation, ablation: Ablation = "full"): Agent {
   const gaze = { x: obs.gazeX, y: obs.gazeY, aperture: obs.aperture };
   const ep: Agent = {
     tracks: [],
@@ -623,7 +623,9 @@ export function createAgent(obs: Observation): Agent {
   ep.cells = obs.cells;
   ep.grid = obs.grid;
   ep.blobs = extractBlobs(obs);
-  perceive(ep, ep.blobs, obs, 0, true);
+  ep.attention.active = ablation === "full" || ablation === "record-only";
+  ep.attention.influencesAction = ablation === "full";
+  perceive(ep, ep.blobs, obs, 0, ep.attention.active);
   selectWorkspace(ep);
   rememberWall(ep, obs);
   ep.guesses = buildGuesses(ep, gaze.x, gaze.y, gaze.aperture);

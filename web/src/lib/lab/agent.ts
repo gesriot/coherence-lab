@@ -17,17 +17,20 @@ export interface Episode {
   configEcho: ViewState["configEcho"];
 }
 
-export function createEpisode(scenario: ScenarioId, seed: number): Episode {
+export function createEpisode(scenario: ScenarioId, seed: number, ablation: Ablation = "full"): Episode {
   const world = makeWorld(scenario, seed);
   const gaze = initialGaze(scenario);
   const obs = observe(world, gaze.x, gaze.y, gaze.aperture);
   const ep: Episode = {
-    agent: createAgent(obs), scenario, seed, world,
+    agent: createAgent(obs, ablation),
+    scenario,
+    seed,
+    world,
     recording: [obs.cells], clip: null, replayIndex: 0,
     initialTrackId: null, coupling: "intact",
     configEcho: { pinGaze: false, injectConfidence: false, replay: false, extraNoise: 0 },
   };
-  ep.initialTrackId = snapshot(ep, "full").evaluator.objects[0]?.nearestTrack ?? null;
+  ep.initialTrackId = snapshot(ep, ablation).evaluator.objects[0]?.nearestTrack ?? null;
   return ep;
 }
 

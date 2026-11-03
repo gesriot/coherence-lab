@@ -21,7 +21,7 @@ export interface BenchReport {
 const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 function roll(scenario: ScenarioId, ablation: Ablation, seed: number, steps: number, mutate?: (ep: Episode, i: number, cfg: LabConfig) => void) {
-  const ep = createEpisode(scenario, seed);
+  const ep = createEpisode(scenario, seed, ablation);
   const cfg = defaultConfig();
   cfg.ablation = ablation;
   const views = [];
@@ -104,7 +104,7 @@ export function runBench(): BenchReport {
     {
       id: "none",
       label: "Без модели",
-      detail: "Взгляд за самой большой областью",
+      detail: "Взгляд направлен к самому крупному пятну",
       ablation: "no-schema",
     },
     {
@@ -136,7 +136,7 @@ export function runBench(): BenchReport {
   rows.push({
     id: "replay",
     label: "Повтор записи",
-    detail: "Те же глаза, но вход больше не следует действию",
+    detail: "Записанные кадры проигрываются независимо от взгляда",
     retention: null,
     pair: null,
     selfError: null,
@@ -163,6 +163,6 @@ export function assess(rows: BenchRow[], count: number): Pick<BenchReport, "caus
   const detected = live != null && replay != null && replay > live + REPLAY_MARGIN + 1e-12;
   const causal = controlsPassed && detected ? "supported" : first ? "mixed" : "unsupported";
   const comparison = first ? "превзошёл первый порядок с заданным запасом" : "не показал требуемого преимущества над первым порядком";
-  const replayResult = detected ? "Повтор обнаружен по ошибке прогноза." : "Ошибка прогноза не достигла порога обнаружения повтора.";
+  const replayResult = detected ? "Повтор обнаружен по ошибке прогноза." : "Прирост ошибки прогноза слишком мал для обнаружения повтора.";
   return { causal, summary: `На ${count} конфигурациях полный контур ${comparison}. ${replayResult}` };
 }

@@ -1,6 +1,6 @@
 export type Shape = "disk" | "square" | "triangle";
 
-export type SourceKind = "observed" | "predicted" | "imagined" | "mixed";
+export type SourceKind = "observed" | "predicted" | "remembered" | "mixed";
 
 export type UncertaintyReason =
   | "none"

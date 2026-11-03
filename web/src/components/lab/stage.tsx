@@ -189,7 +189,7 @@ export function Stage({ view, showTruth, showHypotheses, onPick }: StageProps) {
     <canvas
       ref={canvasRef}
       className="h-full w-full touch-manipulation"
-      aria-label="Поле мира: истина для оценщика и гипотезы агента"
+      aria-label={showTruth ? "Мир оценщика" : "Вход агента"}
       onClick={(event) => {
         const canvas = canvasRef.current;
         if (!canvas) return;

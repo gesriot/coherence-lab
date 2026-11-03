@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createEpisode, defaultConfig, snapshot, stepEpisode } from "./agent.ts";
+import { classify, extractBlobs } from "./observe.ts";
+import { hueDelta } from "./math.ts";
+import { advanceWorld, hiddenByOccluder, makeWorld } from "./world.ts";
+import { createAgent, stepAgent } from "./perception.ts";
+import { assess, type BenchRow } from "./bench.ts";
+import type { Ablation, Observation } from "./types.ts";
 
 test("the episode entry point advances one world step", () => {
   const ep = createEpisode("continuity", 1);
   stepEpisode(ep, defaultConfig());
   assert.equal(snapshot(ep, "full").step, 1);
 });
-
-import { extractBlobs } from "./observe.ts";
-import { hueDelta } from "./math.ts";
-import { advanceWorld, hiddenByOccluder, makeWorld } from "./world.ts";
 
 test("connected reds across zero have a red circular mean", () => {
   const blobs = extractBlobs({
@@ -68,9 +70,6 @@ test("equal seeds reproduce the entire episode", () => {
   assert.deepEqual(run(), run());
 });
 
-import { classify } from "./observe.ts";
-import { createAgent, stepAgent } from "./perception.ts";
-
 test("a replay frame contains only raw pixels and is graded against the previous command", () => {
   const ep = createEpisode("continuity", 3);
   for (let i = 0; i < 8; i++) stepEpisode(ep, defaultConfig());
@@ -93,9 +92,6 @@ test("the next retinal forecast projects an observed wall into the commanded win
   assert.deepEqual(agent.guesses, ["occluder", "empty", "occluder", "empty"]);
   assert.equal(agent.energy.action, 0);
 });
-
-import { assess, type BenchRow } from "./bench.ts";
-import type { Ablation, Observation } from "./types.ts";
 
 function patches(columns: number[], gazeX = 50): Observation {
   const grid = 8;
@@ -208,4 +204,24 @@ test("accepted energies descend to the displayed total and weak hypotheses can e
     assert.equal(trace.at(-1), agent.energy.total);
   }
   assert.equal(agent.tracks.length, 0);
+});
+
+test("changing confidence alters later samples and bindings in a live episode", () => {
+  const control = createEpisode("binding", 1);
+  const injected = createEpisode("binding", 1);
+  let samplesChanged = false;
+  let bindingsChanged = false;
+  for (let i = 0; i < 16; i++) {
+    stepEpisode(control, defaultConfig());
+    stepEpisode(injected, { ...defaultConfig(), injectConfidence: true });
+    const a = control.agent;
+    const b = injected.agent;
+    if (i === 0) assert.deepEqual(a.cells, b.cells);
+    if (a.cells.some((cell, j) => classify(cell) !== classify(b.cells[j]!))) samplesChanged = true;
+    if (samplesChanged && a.tracks.some((t) =>
+      !b.tracks.some((other) => other.id === t.id && other.boundBlob === t.boundBlob))) {
+      bindingsChanged = true;
+    }
+  }
+  assert.ok(samplesChanged && bindingsChanged);
 });
