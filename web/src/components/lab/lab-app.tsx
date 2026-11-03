@@ -516,10 +516,11 @@ export function LabApp() {
           <div>
             <h2 className="font-display text-2xl">Протокол</h2>
             <p className="max-w-2xl text-sm text-muted">
-              {bench ? "Доли успеха приведены с 95%-ми интервалами Уилсона. Шаги обхода усреднены по эпизодам «Непрерывности» и «Конфликта»." : pending}
+              {bench ? "Доли успеха приведены с 95%-ми интервалами Уилсона. Доля шагов обхода рассчитана по всем шагам обеих задач вместе." : pending}
             </p>
           </div>
           <p className="text-sm text-muted">{criterion}</p>
+          {bench?.saturation.map((message) => <p className="text-sm text-muted" key={message}>{message}</p>)}
           {budgetNote && <p className="text-sm text-muted">{budgetNote}</p>}
           <p className="text-sm text-muted">Версия A без обучения: проверяет функцию дирижёра (CTC), но не гипотезу Genesis.</p>
         </div>
@@ -531,7 +532,7 @@ export function LabApp() {
                 <th className="py-2 pr-3 font-medium">Удержание A</th>
                 <th className="py-2 pr-3 font-medium">Пара различена</th>
                 <th className="py-2 pr-3 font-medium">Разница с первым порядком, п. п. (A / пара)</th>
-                <th className="py-2 pr-3 font-medium">Шаги обхода</th>
+                <th className="py-2 pr-3 font-medium">Доля шагов обхода</th>
                 <th className="py-2 pr-3 font-medium">Ошибка самомодели</th>
                 <th className="py-2 font-medium">Ошибка действия</th>
               </tr>
@@ -550,7 +551,7 @@ export function LabApp() {
                       ? "–"
                       : `${points(row.retention.rate - firstOrder.retention.rate)} / ${points(row.pair.rate - firstOrder.pair.rate)}`}
                   </td>
-                  <td className="py-2 pr-3 font-mono tabular-nums">{decimal(row.exploreSteps, 2)}</td>
+                  <td className="py-2 pr-3 font-mono tabular-nums">{decimal(row.exploreRate * 100, 2)}%</td>
                   <td className="py-2 pr-3 font-mono tabular-nums">
                     {decimal(row.selfError)}
                   </td>

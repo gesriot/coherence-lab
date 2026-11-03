@@ -7,11 +7,12 @@ console.table(report.rows.map((row) => ({
   Условие: row.label,
   "Удержание A": formatRate(row.retention),
   "Пара различена": formatRate(row.pair),
-  "Шаги обхода": decimal(row.exploreSteps, 2),
+  "Доля шагов обхода": `${decimal(row.exploreRate * 100, 2)}%`,
   "Ошибка самомодели": decimal(row.selfError),
   "Ошибка действия": decimal(row.actionError),
 })));
 console.log("Причинная роль модели второго порядка:", causalLabel[report.causal]);
+for (const message of report.saturation) console.log(message);
 const note = explorationNote(report.rows);
 if (note) console.log(note);
 console.log("Обнаружение повтора по собственному прогнозу");

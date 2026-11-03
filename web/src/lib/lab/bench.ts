@@ -2,6 +2,7 @@ import { createEpisode, defaultConfig, snapshot, stepEpisode } from "./agent.ts"
 import type { Ablation, ScenarioId, ViewState } from "./types.ts";
 
 const CONFIGURATIONS = 200;
+const PAIR_STEPS = 200;
 const TASK_MARGIN = 0.2;
 const AUC_THRESHOLD = 0.9;
 
@@ -19,7 +20,7 @@ export interface BenchRow {
   detail: string;
   retention: Proportion;
   pair: Proportion;
-  exploreSteps: number;
+  exploreRate: number;
   selfError: number | null;
   actionError: number;
 }
@@ -38,6 +39,7 @@ export interface BenchReport {
   configurations: number;
   rows: BenchRow[];
   replay: ReplayResult[];
+  saturation: string[];
   causal: "supported" | "unsupported" | "mixed";
 }
 
@@ -47,7 +49,7 @@ export const causalLabel = {
   unsupported: "не подтверждена",
 };
 
-export const criterion = `На ${CONFIGURATIONS} конфигурациях полный контур должен опередить каждый из трёх контролей (первый порядок, только запись, лишняя память) более чем на ${TASK_MARGIN * 100} п. п. хотя бы по одной задаче. Отдельно оценщик различает живой эпизод и повтор по ошибке прогноза за шаги 17–40. Критерий обнаружения повтора: AUC ≥ ${decimal(AUC_THRESHOLD, 1)}.`;
+export const criterion = `Удержание A проверяется за 72 шага, различение пары – за ${PAIR_STEPS}. На ${CONFIGURATIONS} конфигурациях полный контур должен опередить каждый из трёх контролей (первый порядок, только запись, лишняя память) более чем на ${TASK_MARGIN * 100} п. п. хотя бы по одной задаче. Отдельно оценщик различает живой эпизод и повтор по ошибке прогноза за шаги 17–40. Критерий обнаружения повтора: AUC ≥ ${decimal(AUC_THRESHOLD, 1)}.`;
 
 export function decimal(value: number | null, digits = 3): string {
   return value == null ? "–" : value.toFixed(digits).replace(".", ",");
@@ -102,6 +104,32 @@ export function assess(rows: BenchRow[]): BenchReport["causal"] {
   return beats("record-only") && beats("dummy-memory") ? "supported" : "mixed";
 }
 
+export function saturationNotes(
+  full: Pick<BenchRow, "retention" | "pair">,
+  first: Pick<BenchRow, "retention" | "pair">,
+): string[] {
+  const notes: string[] = [];
+  for (const [metric, name] of [["retention", "Удержание A"], ["pair", "Пара"]] as const) {
+    const a = full[metric].rate;
+    const b = first[metric].rate;
+    if ((a <= 0.05 && b <= 0.05) || (a >= 0.95 && b >= 0.95)) {
+      notes.push(`Задача «${name}» не различает полный контур и первый порядок: оба результата у края шкалы.`);
+    }
+  }
+  return notes;
+}
+
+interface EpisodeCounts {
+  explored: number;
+  steps: number;
+}
+
+export function explorationRate(episodes: EpisodeCounts[]): number {
+  const steps = episodes.reduce((sum, episode) => sum + episode.steps, 0);
+  const explored = episodes.reduce((sum, episode) => sum + episode.explored, 0);
+  return steps ? explored / steps : 0;
+}
+
 function roll(scenario: ScenarioId, ablation: Ablation, seed: number, steps: number, replay = false) {
   const ep = createEpisode(scenario, seed, ablation);
   const cfg = { ...defaultConfig(), ablation };
@@ -153,17 +181,20 @@ export function runBench(): BenchReport {
   const rows = CONDITIONS.map((spec) => {
     let holds = 0;
     let pairs = 0;
-    let explores = 0;
+    const episodes: EpisodeCounts[] = [];
     const selves: number[] = [];
     const live: number[] = [];
     const recordings: number[] = [];
     for (let seed = 1; seed <= CONFIGURATIONS; seed++) {
       const continuity = roll("continuity", spec.id, seed, 72);
-      const conflict = roll("conflict", spec.id, seed, 46);
+      const conflict = roll("conflict", spec.id, seed, PAIR_STEPS);
       if (retained(continuity)) holds++;
       if (pairResolved(conflict)) pairs++;
       for (const episode of [continuity, conflict]) {
-        explores += episode.filter((v) => v.attention.executedReason === "explore").length;
+        episodes.push({
+          explored: episode.filter((v) => v.attention.executedReason === "explore").length,
+          steps: episode.length,
+        });
       }
       const errors = continuity.slice(0, 60).map((v) => v.energy.self).filter((v) => v != null);
       if (errors.length) selves.push(mean(errors));
@@ -175,18 +206,20 @@ export function runBench(): BenchReport {
     if (recordings.length) replay.push(replayStats(spec.label, live, recordings));
     return {
       ...spec, retention: wilson(holds, CONFIGURATIONS), pair: wilson(pairs, CONFIGURATIONS),
-      exploreSteps: explores / (2 * CONFIGURATIONS),
+      exploreRate: explorationRate(episodes),
       selfError: selves.length ? mean(selves) : null, actionError: mean(live),
     };
   });
-  return { configurations: CONFIGURATIONS, rows, replay, causal: assess(rows) };
+  const full = rows.find((r) => r.id === "full")!;
+  const first = rows.find((r) => r.id === "first-order")!;
+  return { configurations: CONFIGURATIONS, rows, replay, causal: assess(rows), saturation: saturationNotes(full, first) };
 }
 
 export function explorationNote(rows: BenchRow[]): string {
-  const full = rows.find((r) => r.id === "full")!.exploreSteps;
-  const first = rows.find((r) => r.id === "first-order")!.exploreSteps;
+  const full = rows.find((r) => r.id === "full")!.exploreRate;
+  const first = rows.find((r) => r.id === "first-order")!.exploreRate;
   return Math.max(full, first) > 1.5 * Math.min(full, first)
-    ? "Среднее число шагов обхода у полного контура и первого порядка различается более чем в полтора раза."
+    ? "Доли шагов обхода у полного контура и первого порядка различаются более чем в полтора раза."
     : "";
 }
 

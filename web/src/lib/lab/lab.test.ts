@@ -5,7 +5,7 @@ import { classify, extractBlobs } from "./observe.ts";
 import { hueDelta } from "./math.ts";
 import { advanceWorld, hiddenByOccluder, makeWorld } from "./world.ts";
 import { createAgent, firstOrderDecision, stepAgent } from "./perception.ts";
-import { assess, replayStats, wilson, type BenchRow } from "./bench.ts";
+import { assess, explorationRate, replayStats, saturationNotes, wilson, type BenchRow } from "./bench.ts";
 import type { Ablation, Observation } from "./types.ts";
 
 test("the episode entry point advances one world step", () => {
@@ -182,7 +182,7 @@ test("causal verdict requires a strict task advantage independent of replay", ()
   const ids: Ablation[] = ["full", "first-order", "record-only", "dummy-memory"];
   const rows: BenchRow[] = ids.map((id) => ({
     id, label: id, detail: "", retention: wilson(0, 200), pair: wilson(0, 200),
-    exploreSteps: 0, selfError: null, actionError: 0,
+    exploreRate: 0, selfError: null, actionError: 0,
   }));
   rows[0]!.retention = wilson(40, 200);
   assert.equal(assess(rows), "unsupported");
@@ -333,4 +333,20 @@ test("one quantized centroid jump survives eighteen missed observations and favo
   assert.equal(ep.tracks[0]!.id, id);
   assert.equal(ep.tracks[0]!.boundBlob, 0);
   assert.ok(ep.energy.temporal < 0.5);
+});
+
+test("saturation requires both policies at the same inclusive edge of each task", () => {
+  const results = (holds: number, pairs: number) => ({
+    retention: wilson(holds, 200), pair: wilson(pairs, 200),
+  });
+  const notes = saturationNotes(results(10, 190), results(0, 200));
+  assert.equal(notes.length, 2);
+  assert.match(notes[0]!, /Удержание A/);
+  assert.match(notes[1]!, /Пара/);
+  assert.deepEqual(saturationNotes(results(10, 190), results(11, 189)), []);
+  assert.deepEqual(saturationNotes(results(0, 200), results(200, 0)), []);
+});
+
+test("exploration rate pools steps across episodes of different lengths", () => {
+  assert.equal(explorationRate([{ explored: 1, steps: 2 }, { explored: 0, steps: 8 }]), 0.1);
 });
