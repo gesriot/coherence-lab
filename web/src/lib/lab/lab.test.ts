@@ -245,3 +245,28 @@ test("changing confidence alters later samples and bindings in a live episode", 
   }
   assert.ok(samplesChanged && bindingsChanged);
 });
+
+test("exploration uses the history of observed windows and breaks ties in row order", () => {
+  const frame = (x: number, y: number, aperture = 12.5) => ({
+    ...patches([]), gazeX: x, gazeY: y, aperture,
+  });
+  const run = (initialX: number) => {
+    const agent = createAgent(frame(initialX, 12.5));
+    stepAgent(agent, frame(87.5, 87.5), defaultConfig());
+    assert.equal(agent.attention.executedReason, "explore");
+    return [agent.gazeX, agent.gazeY];
+  };
+  assert.deepEqual(run(12.5), [37.5, 12.5]);
+  assert.deepEqual(run(87.5), [12.5, 12.5]);
+  assert.deepEqual(run(12.5), run(12.5));
+
+  const agent = createAgent(frame(87.5, 87.5));
+  stepAgent(agent, frame(25, 25), defaultConfig());
+  assert.deepEqual(agent.lastViewed.slice(0, 6), [1, 1, -1, -1, 1, 1]);
+  assert.deepEqual([agent.gazeX, agent.gazeY], [62.5, 12.5]);
+  assert.equal(agent.aperture, 22);
+
+  const seen = createAgent(frame(50, 50, 50));
+  stepAgent(seen, frame(25, 25), defaultConfig());
+  assert.deepEqual([seen.gazeX, seen.gazeY], [62.5, 12.5]);
+});

@@ -40,6 +40,7 @@ export interface Agent {
   energy: EnergyBreakdown;
   guesses: Expectation[];
   wallMap: Uint8Array;
+  lastViewed: number[];
   focusPrevId: number | null;
   predictedDrop: number;
   predictedObserved: boolean;
@@ -341,22 +342,31 @@ function selectWorkspace(ep: Agent): void {
   for (const t of ep.tracks) t.inWorkspace = keep.has(t.id);
 }
 
-const WAYPOINTS = [
-  { x: 82, y: 32 },
-  { x: 34, y: 50 },
-  { x: 50, y: 18 },
-  { x: 18, y: 78 },
-];
+const REGIONS_PER_SIDE = 4;
+const REGION_WIDTH = WORLD / REGIONS_PER_SIDE;
+const REGIONS = Array.from({ length: REGIONS_PER_SIDE ** 2 }, (_, i) => ({
+  x: ((i % REGIONS_PER_SIDE) + 0.5) * REGION_WIDTH,
+  y: (Math.floor(i / REGIONS_PER_SIDE) + 0.5) * REGION_WIDTH,
+}));
 
-function explore(cycle: number): Decision {
-  const point = WAYPOINTS[Math.floor(cycle / 4) % WAYPOINTS.length]!;
+function recordView(lastViewed: number[], obs: Observation, step: number): void {
+  for (const [i, center] of REGIONS.entries()) {
+    if (Math.abs(center.x - obs.gazeX) <= obs.aperture && Math.abs(center.y - obs.gazeY) <= obs.aperture) {
+      lastViewed[i] = step;
+    }
+  }
+}
+
+function explore(lastViewed: number[]): Decision {
+  const oldest = lastViewed.indexOf(Math.min(...lastViewed));
   return {
-    x: point.x,
-    y: point.y,
+    ...REGIONS[oldest]!,
     aperture: WIDE,
     reason: "explore",
     focusId: null,
-    note: "Перехожу к следующей из четырёх точек обхода.",
+    note: lastViewed[oldest] === -1
+      ? "Осматриваю область, центр которой ещё не попадал в окно."
+      : "Возвращаюсь в область, которую дольше всего не проверял.",
   };
 }
 
@@ -431,15 +441,7 @@ function schemaDecision(ep: Agent): Decision {
 
   const settled = workspace.length > 0 && workspace.every((t) => t.unseen === 0 && t.uncertainty < 0.34 && !t.conflict);
   if (ep.cycle > 0 && ep.cycle % 8 === 0 && settled) {
-    const p = WAYPOINTS[Math.floor(ep.cycle / 8) % WAYPOINTS.length]!;
-    return {
-      x: p.x,
-      y: p.y,
-      aperture: WIDE,
-      reason: "explore",
-      focusId: null,
-      note: "Текущая сцена устойчива. Короткий обход – не пропущена ли другая сущность.",
-    };
+    return explore(ep.lastViewed);
   }
 
   const pursued = workspace.filter((t) => t.source === "observed" && t.boundBlob != null);
@@ -454,13 +456,13 @@ function schemaDecision(ep: Agent): Decision {
       note: "Гипотеза устойчива. Сопровождаю её, пока не появится дисгармония.",
     };
   }
-  return explore(ep.cycle);
+  return explore(ep.lastViewed);
 }
 
 function firstOrderDecision(ep: Agent): Decision {
   const focus = ep.tracks.find((t) => t.id === ep.attention.focusId)
     ?? [...ep.tracks].sort((a, b) => b.evidence - a.evidence)[0];
-  if (!focus) return { ...explore(ep.cycle), aperture: 18 };
+  if (!focus) return explore(ep.lastViewed);
   return {
     x: clamp(focus.x + focus.vx, 4, 96),
     y: clamp(focus.y + focus.vy, 4, 96),
@@ -479,10 +481,7 @@ function salienceDecision(ep: Agent, useMemory: boolean): Decision {
     if (ep.salienceFrames.length > ep.workspaceCapacity) ep.salienceFrames.shift();
   }
   const blob = largest ?? [...ep.salienceFrames].reverse().find((patch) => patch != null);
-  if (!blob) {
-    const wander = explore(ep.cycle);
-    return { ...wander, note: "В окне пусто. Перехожу к следующей точке обхода." };
-  }
+  if (!blob) return explore(ep.lastViewed);
   return {
     x: clamp(blob.cx, 4, 96),
     y: clamp(blob.cy, 4, 96),
@@ -603,6 +602,7 @@ export function createAgent(obs: Observation, ablation: Ablation = "full"): Agen
     energy: emptyEnergy(),
     guesses: [],
     wallMap: new Uint8Array(WORLD ** 2),
+    lastViewed: REGIONS.map(() => -1),
     focusPrevId: null,
     predictedDrop: 0,
     predictedObserved: false,
@@ -628,6 +628,7 @@ export function createAgent(obs: Observation, ablation: Ablation = "full"): Agen
   ep.attention.influencesAction = ablation === "full";
   perceive(ep, ep.blobs, obs, 0, ep.attention.active);
   selectWorkspace(ep);
+  recordView(ep.lastViewed, obs, 0);
   rememberWall(ep, obs);
   ep.guesses = buildGuesses(ep, gaze.x, gaze.y, gaze.aperture);
   ep.attention.agreement = agreementOf(ep.tracks, ep.blobs);
@@ -642,6 +643,7 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
   ep.cells = obs.cells;
   ep.grid = obs.grid;
   ep.obsGaze = { x: obs.gazeX, y: obs.gazeY, aperture: obs.aperture };
+  recordView(ep.lastViewed, obs, ep.stepIndex + 1);
   rememberWall(ep, obs);
 
   const schemaOn = cfg.ablation === "full" || cfg.ablation === "record-only";
