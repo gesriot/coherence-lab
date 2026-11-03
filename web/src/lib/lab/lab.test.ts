@@ -5,7 +5,7 @@ import { classify, extractBlobs } from "./observe.ts";
 import { hueDelta } from "./math.ts";
 import { advanceWorld, hiddenByOccluder, makeWorld } from "./world.ts";
 import { createAgent, stepAgent } from "./perception.ts";
-import { assess, type BenchRow } from "./bench.ts";
+import { assess, replayStats, wilson, type BenchRow } from "./bench.ts";
 import type { Ablation, Observation } from "./types.ts";
 
 test("the episode entry point advances one world step", () => {
@@ -158,19 +158,39 @@ test("workspace competition and injected confidence change the schema's own deci
   assert.notEqual(injected.gazeX, full.gazeX);
 });
 
-test("the verdict requires an advantage over the main controls and independent replay detection", () => {
-  const rows: BenchRow[] = ["full", "first-order", "record", "dummy", "replay"].map((id) => ({
-    id, label: id, detail: "", retention: 0, pair: 0, selfError: null, actionError: 0.05,
+test("Wilson intervals match known binomial examples", () => {
+  for (const [k, low, high] of [[0, 0, 0.161125], [10, 0.299298, 0.700702], [20, 0.838875, 1]]) {
+    const p = wilson(k!, 20);
+    assert.ok(Math.abs(p.low - low!) < 1e-6 && Math.abs(p.high - high!) < 1e-6);
+  }
+});
+
+test("replay AUC compares all pairs, splits ties and includes the threshold", () => {
+  const mixed = replayStats("", [0, 1], [1, 2]);
+  assert.equal(mixed.auc, 0.875);
+  assert.equal(mixed.detected, false);
+  assert.equal(mixed.medianDifference, 1);
+  assert.equal(mixed.higher.k, 2);
+  assert.equal(replayStats("", [1], [1]).auc, 0.5);
+  assert.equal(replayStats("", [2], [1]).auc, 0);
+  const boundary = replayStats("", [0, 1, 2, 3, 4], [4, 4, 4, 4, 4]);
+  assert.equal(boundary.auc, 0.9);
+  assert.equal(boundary.detected, true);
+});
+
+test("causal verdict requires a strict task advantage independent of replay", () => {
+  const ids: Ablation[] = ["full", "first-order", "record-only", "dummy-memory"];
+  const rows: BenchRow[] = ids.map((id) => ({
+    id, label: id, detail: "", retention: wilson(0, 200), pair: wilson(0, 200),
+    exploreSteps: 0, selfError: null, actionError: 0,
   }));
-  rows[0]!.retention = 1;
-  rows[1]!.retention = 1;
-  assert.equal(assess(rows, 20).causal, "unsupported");
-  rows[0]!.pair = 1;
-  assert.equal(assess(rows, 20).causal, "mixed");
-  rows[4]!.actionError = 0.14;
-  assert.equal(assess(rows, 20).causal, "supported");
-  rows[3]!.retention = rows[3]!.pair = 1;
-  assert.equal(assess(rows, 20).causal, "mixed");
+  rows[0]!.retention = wilson(40, 200);
+  assert.equal(assess(rows), "unsupported");
+  rows[0]!.retention = wilson(41, 200);
+  rows[3]!.retention = wilson(41, 200);
+  assert.equal(assess(rows), "mixed");
+  rows[0]!.pair = wilson(41, 200);
+  assert.equal(assess(rows), "supported");
 });
 
 test("binding and motion weights resolve the same ambiguous crossing differently", () => {

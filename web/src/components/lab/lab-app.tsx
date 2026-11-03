@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, RotateCcw, StepForward } from "lucide-react";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "@/lib/lab/agent";
-import { criterion, runBench, type BenchReport } from "@/lib/lab/bench";
+import { causalLabel, criterion, formatRate, replayDescription, sharedDetection, type BenchReport } from "@/lib/lab/bench";
 import type { Ablation, Agreement, AttentionReason, ScenarioId, SourceKind, UncertaintyReason, ViewState } from "@/lib/lab/types";
 import { Stage } from "@/components/lab/stage";
 
@@ -70,12 +70,7 @@ const ATTENTION: Record<AttentionReason, string> = {
 };
 
 function points(delta: number): string {
-  return (delta * 100).toLocaleString("ru-RU", { maximumFractionDigits: 0, signDisplay: "exceptZero" });
-}
-
-function pct(value: number | null): string {
-  if (value == null) return "–";
-  return `${Math.round(value * 100)}%`;
+  return (delta * 100).toLocaleString("ru-RU", { maximumFractionDigits: 1, signDisplay: "exceptZero" });
 }
 
 function fresh(scenario: ScenarioId, seed: number, ablation: Ablation): { episode: Episode; view: ViewState } {
@@ -96,6 +91,7 @@ export function LabApp() {
   const [showHypotheses, setShowHypotheses] = useState(true);
   const [running, setRunning] = useState(true);
   const [speed, setSpeed] = useState<1 | 2 | 4>(1);
+  const [benchFailed, setBenchFailed] = useState(false);
   const [bench, setBench] = useState<BenchReport | null>(null);
   const [view, setView] = useState<ViewState>(() => fresh("continuity", 4, "full").view);
   const episodeRef = useRef<Episode | null>(null);
@@ -105,8 +101,16 @@ export function LabApp() {
   controls.current = { ablation, pinGaze, pin, inject, replay, extraNoise };
 
   useEffect(() => {
-    const id = window.setTimeout(() => setBench(runBench()), 60);
-    return () => window.clearTimeout(id);
+    const worker = new Worker(new URL("../../lib/lab/bench-worker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = (event: MessageEvent<BenchReport>) => {
+      setBench(event.data);
+      worker.terminate();
+    };
+    worker.onerror = () => {
+      setBenchFailed(true);
+      worker.terminate();
+    };
+    return () => worker.terminate();
   }, []);
 
   useEffect(() => {
@@ -154,6 +158,7 @@ export function LabApp() {
     setView(snapshot(episode, current.ablation));
   }
 
+  const pending = benchFailed ? "Не удалось рассчитать бенчмарк." : "Идёт расчёт…";
   const firstOrder = bench?.rows.find((row) => row.id === "first-order");
   const schemaEnabled = ablation === "full" || ablation === "record-only";
   const retainedLabel =
@@ -510,7 +515,7 @@ export function LabApp() {
           <div>
             <h2 className="font-display text-2xl">Протокол</h2>
             <p className="max-w-2xl text-sm text-muted">
-              {bench ? bench.summary : "Идёт сравнение конфигураций…"}
+              {bench ? "Доли успеха и 95%-е интервалы Уилсона." : pending}
             </p>
           </div>
           <p className="text-sm text-muted">{criterion}</p>
@@ -535,12 +540,12 @@ export function LabApp() {
                     <div className="text-fg">{row.label}</div>
                     <div className="text-xs text-muted">{row.detail}</div>
                   </td>
-                  <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.retention)}</td>
-                  <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.pair)}</td>
+                  <td className="py-2 pr-3 font-mono tabular-nums">{formatRate(row.retention)}</td>
+                  <td className="py-2 pr-3 font-mono tabular-nums">{formatRate(row.pair)}</td>
                   <td className="py-2 pr-3 font-mono tabular-nums">
-                    {row.retention == null || row.pair == null || firstOrder?.retention == null || firstOrder.pair == null
+                    {!firstOrder
                       ? "–"
-                      : `${points(row.retention - firstOrder.retention)} / ${points(row.pair - firstOrder.pair)}`}
+                      : `${points(row.retention.rate - firstOrder.retention.rate)} / ${points(row.pair.rate - firstOrder.pair.rate)}`}
                   </td>
                   <td className="py-2 pr-3 font-mono tabular-nums">
                     {row.selfError == null ? "–" : row.selfError.toFixed(3).replace(".", ",")}
@@ -559,14 +564,21 @@ export function LabApp() {
             <dd>реализован</dd>
           </div>
           <div className="rounded-lg border border-line px-3 py-2">
-            <dt className="text-xs text-muted">Причинная роль</dt>
+            <dt className="text-xs text-muted">Причинная роль модели второго порядка</dt>
             <dd>
-              {bench == null ? "считается" : { supported: "подтверждена на этих конфигурациях", mixed: "смешанный результат", unsupported: "не подтверждена" }[bench.causal]}
+              {bench ? causalLabel[bench.causal] : pending}
             </dd>
           </div>
           <div className="rounded-lg border border-line px-3 py-2">
             <dt className="text-xs text-muted">Феноменальное сознание</dt>
             <dd>не установлено</dd>
+          </div>
+          <div className="rounded-lg border border-line px-3 py-2 sm:col-span-3">
+            <dt className="text-xs text-muted">Обнаружение повтора по собственному прогнозу</dt>
+            <dd>
+              {bench ? bench.replay.map((r) => <p key={r.label}>{replayDescription(r)}</p>) : pending}
+              {bench?.replay.every((r) => r.detected) && <p>{sharedDetection}</p>}
+            </dd>
           </div>
         </dl>
       </section>

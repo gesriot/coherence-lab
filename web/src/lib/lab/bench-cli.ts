@@ -1,15 +1,16 @@
-import { runBench } from "./bench.ts";
+import { causalLabel, criterion, decimal, formatRate, replayDescription, runBench, sharedDetection } from "./bench.ts";
 
 const report = runBench();
-const rate = (value: number | null) => value == null ? "–" : `${(value * 100).toFixed(0)}%`;
-const error = (value: number | null) => value?.toFixed(3) ?? "–";
-
-console.log(`Конфигураций на условие: ${report.configurations}`);
+console.log(criterion);
+console.log("Доли успеха и 95%-е интервалы Уилсона");
 console.table(report.rows.map((row) => ({
   Условие: row.label,
-  "Удержание A": rate(row.retention),
-  "Пара различена": rate(row.pair),
-  "Ошибка самомодели": error(row.selfError),
-  "Ошибка действия": error(row.actionError),
+  "Удержание A": formatRate(row.retention),
+  "Пара различена": formatRate(row.pair),
+  "Ошибка самомодели": decimal(row.selfError),
+  "Ошибка действия": decimal(row.actionError),
 })));
-console.log(report.causal, report.summary);
+console.log("Причинная роль модели второго порядка:", causalLabel[report.causal]);
+console.log("Обнаружение повтора по собственному прогнозу");
+for (const result of report.replay) console.log(replayDescription(result));
+if (report.replay.every((r) => r.detected)) console.log(sharedDetection);

@@ -78,6 +78,7 @@ function emptyAttention(x: number, y: number, aperture: number): AttentionState 
     influencesAction: true,
     focusId: null,
     reason: "idle",
+    executedReason: "idle",
     agreement: "underdetermined",
     intendedX: x,
     intendedY: y,
@@ -480,7 +481,7 @@ function salienceDecision(ep: Agent, useMemory: boolean): Decision {
   const blob = largest ?? [...ep.salienceFrames].reverse().find((patch) => patch != null);
   if (!blob) {
     const wander = explore(ep.cycle);
-    return { ...wander, reason: "salience", note: "В окне пусто. Перехожу к следующей точке обхода." };
+    return { ...wander, note: "В окне пусто. Перехожу к следующей точке обхода." };
   }
   return {
     x: clamp(blob.cx, 4, 96),
@@ -691,6 +692,7 @@ export function stepAgent(ep: Agent, obs: Observation, cfg: AgentControls): void
     active: schemaOn,
     influencesAction: influences,
     focusId: schema ? schema.focusId : executed.focusId,
+    executedReason: executed.reason,
     reason: influences ? executed.reason : (schema?.reason ?? executed.reason),
     agreement: agreementOf(ep.tracks, ep.blobs),
     intendedX: schema?.x ?? executed.x,

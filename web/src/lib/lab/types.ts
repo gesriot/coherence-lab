@@ -114,6 +114,7 @@ export interface AttentionState {
   influencesAction: boolean;
   focusId: number | null;
   reason: AttentionReason;
+  executedReason: AttentionReason;
   agreement: Agreement;
   intendedX: number;
   intendedY: number;
