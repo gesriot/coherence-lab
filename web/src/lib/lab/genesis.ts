@@ -9,6 +9,7 @@ import { hiddenByOccluder } from "./world.ts";
 export const { checkpoints } = genesisTask;
 const { curriculum, ghostDelay } = genesisTask;
 const EVAL_SEEDS = 20;
+export const tuningAreaUnits = (checkpoints.length - 1) * 2 * EVAL_SEEDS;
 
 function nearest<T extends { x: number; y: number }>(objects: T[], position: { x: number; y: number }): T {
   let best = objects[0]!, distance = Infinity;

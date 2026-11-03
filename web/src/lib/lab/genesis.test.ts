@@ -158,7 +158,17 @@ test("only the oracle training condition requests privileged labels", () => {
   }
 });
 
-import { bootstrap, effect, evaluate, trainingCurve } from "./genesis.ts";
+import { area, bootstrap, checkpoints, effect, evaluate, trainingCurve, tuningAreaUnits } from "./genesis.ts";
+
+test("tuning recovers the exact number of successes across post-training checkpoints", () => {
+  const curve = checkpoints.map((_, i) => ({
+    accuracy: i === 0 ? 1 : i === 1 ? 3 / (2 * 20) : 0,
+    retention: i === 0 ? 1 : i === 1 ? 3 / 20 : 0, ghostFree: i === 0 ? 1 : 0,
+    untracked: 0, motionError: 0, occlusion: 0.28, absence: 0.28, noData: 0.28,
+  }));
+  assert.equal(tuningAreaUnits, (checkpoints.length - 1) * 2 * 20);
+  assert.equal(Math.round(area(curve) * tuningAreaUnits), 3);
+});
 
 test("bootstrap and strict paired thresholds preserve both directions and zero boundaries", () => {
   const sample = [-0.1, 0.2, 0.4, 0.25];
