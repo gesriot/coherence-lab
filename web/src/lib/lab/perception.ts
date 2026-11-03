@@ -357,6 +357,10 @@ function recordView(lastViewed: number[], obs: Observation, step: number): void 
   }
 }
 
+function explorationDue(cycle: number): boolean {
+  return cycle > 0 && cycle % 8 === 0;
+}
+
 function explore(lastViewed: number[]): Decision {
   const oldest = lastViewed.indexOf(Math.min(...lastViewed));
   return {
@@ -440,7 +444,7 @@ function schemaDecision(ep: Agent): Decision {
   }
 
   const settled = workspace.length > 0 && workspace.every((t) => t.unseen === 0 && t.uncertainty < 0.34 && !t.conflict);
-  if (ep.cycle > 0 && ep.cycle % 8 === 0 && settled) {
+  if (explorationDue(ep.cycle) && settled) {
     return explore(ep.lastViewed);
   }
 
@@ -459,10 +463,13 @@ function schemaDecision(ep: Agent): Decision {
   return explore(ep.lastViewed);
 }
 
-function firstOrderDecision(ep: Agent): Decision {
+export function firstOrderDecision(ep: Agent): Decision {
   const focus = ep.tracks.find((t) => t.id === ep.attention.focusId)
     ?? [...ep.tracks].sort((a, b) => b.evidence - a.evidence)[0];
   if (!focus) return explore(ep.lastViewed);
+  if (explorationDue(ep.cycle) && focus.boundBlob != null) {
+    return { ...explore(ep.lastViewed), focusId: focus.id };
+  }
   return {
     x: clamp(focus.x + focus.vx, 4, 96),
     y: clamp(focus.y + focus.vy, 4, 96),

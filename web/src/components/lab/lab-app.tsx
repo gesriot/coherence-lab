@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, RotateCcw, StepForward } from "lucide-react";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "@/lib/lab/agent";
-import { causalLabel, criterion, formatRate, replayDescription, sharedDetection, type BenchReport } from "@/lib/lab/bench";
+import { causalLabel, criterion, decimal, explorationNote, formatRate, replayDescription, sharedDetection, type BenchReport } from "@/lib/lab/bench";
 import type { Ablation, Agreement, AttentionReason, ScenarioId, SourceKind, UncertaintyReason, ViewState } from "@/lib/lab/types";
 import { Stage } from "@/components/lab/stage";
 
@@ -519,6 +519,7 @@ export function LabApp() {
             </p>
           </div>
           <p className="text-sm text-muted">{criterion}</p>
+          {bench && <p className="text-sm text-muted">{explorationNote(bench.rows)}</p>}
           <p className="text-sm text-muted">Версия A без обучения: проверяет функцию дирижёра (CTC), но не гипотезу Genesis.</p>
         </div>
         <div className="overflow-x-auto">
@@ -529,6 +530,7 @@ export function LabApp() {
                 <th className="py-2 pr-3 font-medium">Удержание A</th>
                 <th className="py-2 pr-3 font-medium">Пара различена</th>
                 <th className="py-2 pr-3 font-medium">Разница с первым порядком, п. п. (A / пара)</th>
+                <th className="py-2 pr-3 font-medium">Шаги обхода</th>
                 <th className="py-2 pr-3 font-medium">Ошибка самомодели</th>
                 <th className="py-2 font-medium">Ошибка действия</th>
               </tr>
@@ -547,6 +549,7 @@ export function LabApp() {
                       ? "–"
                       : `${points(row.retention.rate - firstOrder.retention.rate)} / ${points(row.pair.rate - firstOrder.pair.rate)}`}
                   </td>
+                  <td className="py-2 pr-3 font-mono tabular-nums">{decimal(row.exploreSteps, 2)}</td>
                   <td className="py-2 pr-3 font-mono tabular-nums">
                     {row.selfError == null ? "–" : row.selfError.toFixed(3).replace(".", ",")}
                   </td>

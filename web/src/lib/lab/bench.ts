@@ -182,6 +182,14 @@ export function runBench(): BenchReport {
   return { configurations: CONFIGURATIONS, rows, replay, causal: assess(rows) };
 }
 
+export function explorationNote(rows: BenchRow[]): string {
+  const full = rows.find((r) => r.id === "full")!.exploreSteps;
+  const first = rows.find((r) => r.id === "first-order")!.exploreSteps;
+  return Math.max(full, first) > 1.5 * Math.min(full, first)
+    ? "Среднее число шагов обхода у полного контура и первого порядка различается более чем в полтора раза."
+    : "";
+}
+
 export function replayDescription(result: ReplayResult): string {
   return `${result.label}: ${result.detected ? "обнаружен" : "не обнаружен"} (AUC ${decimal(result.auc)}). Средняя ошибка в живом эпизоде / при повторе: ${decimal(result.liveError)} / ${decimal(result.replayError)}. Медиана парной разницы: ${decimal(result.medianDifference)}. Ошибка выше при повторе в ${formatRate(result.higher)}.`;
 }

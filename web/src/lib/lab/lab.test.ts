@@ -4,7 +4,7 @@ import { createEpisode, defaultConfig, snapshot, stepEpisode } from "./agent.ts"
 import { classify, extractBlobs } from "./observe.ts";
 import { hueDelta } from "./math.ts";
 import { advanceWorld, hiddenByOccluder, makeWorld } from "./world.ts";
-import { createAgent, stepAgent } from "./perception.ts";
+import { createAgent, firstOrderDecision, stepAgent } from "./perception.ts";
 import { assess, replayStats, wilson, type BenchRow } from "./bench.ts";
 import type { Ablation, Observation } from "./types.ts";
 
@@ -269,4 +269,34 @@ test("exploration uses the history of observed windows and breaks ties in row or
   const seen = createAgent(frame(50, 50, 50));
   stepAgent(seen, frame(25, 25), defaultConfig());
   assert.deepEqual([seen.gazeX, seen.gazeY], [62.5, 12.5]);
+});
+
+test("first-order decisions are independent of second-order fields", () => {
+  const agent = createAgent(patches([1, 6]));
+  for (const cycle of [0, 8, 9]) {
+    agent.cycle = cycle;
+    const before = firstOrderDecision(agent);
+    for (const t of agent.tracks) {
+      t.source = t.source === "observed" ? "remembered" : "observed";
+      t.reason = t.reason === "none" ? "occlusion" : "none";
+      t.uncertainty = 1 - t.uncertainty;
+      t.conflict = !t.conflict;
+    }
+    assert.deepEqual(firstOrderDecision(agent), before);
+  }
+});
+
+test("scheduled first-order exploration requires the sticky focus to have a current binding", () => {
+  const agent = createAgent(patches([1, 6]));
+  agent.attention.focusId = agent.tracks[1]!.id;
+  for (const cycle of [0, 7, 8, 9, 16]) {
+    agent.cycle = cycle;
+    const choice = firstOrderDecision(agent);
+    const due = cycle === 8 || cycle === 16;
+    assert.equal(choice.reason, due ? "explore" : "pursue");
+    assert.equal(choice.aperture, due ? 22 : 18);
+    assert.equal(choice.focusId, agent.attention.focusId);
+  }
+  agent.tracks[1]!.boundBlob = null;
+  assert.equal(firstOrderDecision(agent).reason, "pursue");
 });
