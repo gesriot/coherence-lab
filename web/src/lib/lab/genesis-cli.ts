@@ -5,8 +5,8 @@ import { experimentSeeds, genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
 import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
-// Obsolete rates from the previous disappearance metric, pending first-order tuning.
-const selectedRates = { motion: 0.1, existence: 0.1 };
+// Selected with the last-visible-frame metric on first-order runs 521–530 and evaluation seeds 2041–2060.
+const selectedRates = { motion: 0.03, existence: 0.1 };
 
 const { runs, firstRun, firstEvalSeed } = experimentSeeds.comparison;
 const { evaluationCount } = experimentSeeds;
