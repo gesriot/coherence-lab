@@ -77,6 +77,7 @@ interface Gap {
 export interface ClosedGap extends GapExample {
   id: number;
   start: Gap["start"];
+  forecast: { x: number; y: number; radius: number };
 }
 
 /** Owned by one episode. Unresolved records are censored when this book is discarded. */
@@ -110,6 +111,7 @@ export class GapBook {
           births.splice(index, 1);
         }
       }
+      const previous = gap.trace;
       gap.trace = predicted;
       const reason = predicted.reason;
       if (!found && (reason === "occlusion" || reason === "absence" || reason === "no-data")) {
@@ -117,7 +119,10 @@ export class GapBook {
         gap.last = reason;
       }
       if (found || (gap.deletedAt != null && step - gap.deletedAt >= 30)) {
-        if (gap.last) closed.push({ id, start: gap.start, exposure: gap.exposure, last: gap.last, found });
+        if (gap.last) {
+          const forecast = { x: previous.x + previous.vx, y: previous.y + previous.vy, radius: radius(previous) };
+          closed.push({ id, start: gap.start, forecast, exposure: gap.exposure, last: gap.last, found });
+        }
         this.pending.delete(id);
       }
     }

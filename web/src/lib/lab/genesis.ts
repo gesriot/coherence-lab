@@ -18,6 +18,14 @@ function nearest<T extends { x: number; y: number }>(objects: T[], position: { x
   return best;
 }
 
+export function confirmsForecast(
+  object: { x: number; y: number; vanishAt: number | null }, step: number,
+  forecast: { x: number; y: number; radius: number },
+): boolean {
+  return (object.vanishAt == null || object.vanishAt > step)
+    && Math.hypot(object.x - forecast.x, object.y - forecast.y) <= forecast.radius;
+}
+
 /** Privileged labels live in the experiment driver. Neither the agent nor replay receives a world. */
 function oracleLabels(ep: Episode): Labels {
   const frame = () => ep.world.objects.map((o) => ({ id: o.id, x: o.x, y: o.y, vanishAt: o.vanishAt }));
@@ -31,7 +39,8 @@ function oracleLabels(ep: Episode): Labels {
     },
     found(gap) {
       const obj = nearest(frames[gap.start.step]!, gap.start);
-      return obj.vanishAt == null || obj.vanishAt > ep.world.t;
+      const now = frames[ep.world.t]!.find((o) => o.id === obj.id)!;
+      return confirmsForecast(now, ep.world.t, gap.forecast);
     },
   };
 }
@@ -47,10 +56,10 @@ export interface Point {
   noData: number;
 }
 
-function evaluate(models: Models, ablation: Ablation, firstSeed: number): Point {
+export function evaluate(models: Models, ablation: Ablation, firstSeed: number, seeds = EVAL_SEEDS): Point {
   let held = 0, clean = 0, untracked = 0, error = 0, predictions = 0;
   const cfg = { ...defaultConfig(), ablation };
-  for (let seed = firstSeed; seed < firstSeed + EVAL_SEEDS; seed++) {
+  for (let seed = firstSeed; seed < firstSeed + seeds; seed++) {
     const ep = createEpisode("continuity", seed, ablation, models);
     let hidden = false, exit = 0;
     for (let step = 1; step <= 72; step++) {
@@ -80,22 +89,30 @@ function evaluate(models: Models, ablation: Ablation, firstSeed: number): Point 
     }
   }
   return {
-    accuracy: (held + clean) / (2 * EVAL_SEEDS), retention: held / EVAL_SEEDS,
-    ghostFree: clean / EVAL_SEEDS, untracked, motionError: error / predictions,
+    accuracy: (held + clean) / (2 * seeds), retention: held / seeds,
+    ghostFree: clean / seeds, untracked, motionError: error / predictions,
     occlusion: hazard(models, "occlusion"), absence: hazard(models, "absence"), noData: hazard(models, "no-data"),
   };
 }
 
-export function runTrial(condition: Condition, seed: number, firstEvalSeed: number, rates: Rates): Point[] {
-  const { selection, gaze } = conditions[condition];
-  const learner = new Learner(rates, selection, seed);
-  const curve = [evaluate(learner.models, gaze, firstEvalSeed)];
-  for (let episode = 1; episode <= 32; episode++) {
+export function trainingCurve<T>(
+  condition: Condition, seed: number, rates: Rates, stages: readonly number[],
+  measure: (models: Models) => T,
+): T[] {
+  const learner = new Learner(rates, conditions[condition].selection, seed);
+  const curve: T[] = [];
+  if (stages.includes(0)) curve.push(measure(learner.models));
+  for (let episode = 1; episode <= stages[stages.length - 1]!; episode++) {
     const scenario = curriculum[(episode - 1) % curriculum.length]!;
     trainEpisode(learner, condition, scenario, 10000 + 100 * seed + episode, oracleLabels);
-    if (checkpoints.some((n) => n === episode)) curve.push(evaluate(learner.models, gaze, firstEvalSeed));
+    if (stages.includes(episode)) curve.push(measure(learner.models));
   }
   return curve;
+}
+
+export function runTrial(condition: Condition, seed: number, firstEvalSeed: number, rates: Rates): Point[] {
+  return trainingCurve(condition, seed, rates, checkpoints, (models) =>
+    evaluate(models, conditions[condition].gaze, firstEvalSeed));
 }
 
 export function area(curve: Point[]): number {

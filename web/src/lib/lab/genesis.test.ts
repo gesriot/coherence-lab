@@ -155,7 +155,7 @@ test("only the oracle training condition requests privileged labels", () => {
   }
 });
 
-import { bootstrap, effect, feasibility, runTrial } from "./genesis.ts";
+import { bootstrap, effect, feasibility, evaluate, trainingCurve } from "./genesis.ts";
 
 test("bootstrap and strict paired thresholds preserve both directions and zero boundaries", () => {
   const sample = [-0.1, 0.2, 0.4, 0.25];
@@ -175,6 +175,33 @@ test("feasibility gates are inclusive and saturation is a separate annotation", 
 });
 
 test("a seeded first-order training run reproduces its held-out learning curve", () => {
-  const run = () => runTrial("first-order", 501, 2001, { motion: 0.03, permanence: 0.003 });
+  const run = () => trainingCurve("first-order", 701, { motion: 0.03, permanence: 0.003 }, [0, 1],
+    (models) => evaluate(models, "first-order", 3001, 1));
   assert.deepEqual(run(), run());
+});
+
+import { confirmsForecast } from "./genesis.ts";
+import { controlCurve, referenceModel, requireControl } from "./feasibility.ts";
+
+test("design command rejects every comparison condition", () => {
+  for (const id of ["full", "first-order", "no-protocol", "strong-first-order", "constructor"]) {
+    assert.throws(() => requireControl(id), /Недопустимое условие/);
+  }
+});
+
+test("oracle requires the original surviving object within the closing prediction radius", () => {
+  const forecast = { x: 5, y: 7, radius: 5 };
+  assert.equal(confirmsForecast({ x: 8, y: 11, vanishAt: null }, 10, forecast), true);
+  assert.equal(confirmsForecast({ x: 8, y: 11, vanishAt: 10 }, 10, forecast), false);
+  assert.equal(confirmsForecast({ x: 8, y: 12, vanishAt: null }, 10, forecast), false);
+});
+
+test("hand-set controls are evaluated without learning or parameter drift", () => {
+  for (const id of ["ideal", "keep-all"] as const) {
+    const expected = referenceModel(id);
+    const curve = controlCurve(id, 701, { motion: 1, permanence: 0.1 }, [0, 4], 3001, 2);
+    assert.deepEqual(curve[0], curve[1]);
+    assert.deepEqual(curve[1]!.weights, expected.weights.flat());
+    assert.deepEqual(curve[1]!.logits, Object.values(expected.logits));
+  }
 });

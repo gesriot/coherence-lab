@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "genesis:feasibility": "node src/lib/lab/feasibility-cli.ts",
     "genesis:tune": "node src/lib/lab/genesis-tune.ts",
     "genesis": "node src/lib/lab/genesis-cli.ts",
     "bench": "node src/lib/lab/bench-cli.ts",
