@@ -4,8 +4,8 @@ import { genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
 import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
-// Participant rates from the earlier first-order tuning pass; tune again before comparison.
-const selectedRates = { motion: 0.3, permanence: 0.003 };
+// Selected on the frozen 64-episode task using first-order runs 501–510 and evaluation seeds 2001–2020.
+const selectedRates = { motion: 0.03, permanence: 0.03 };
 
 const runs = 30;
 const evalSeed = 1001;
