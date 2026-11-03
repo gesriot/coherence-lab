@@ -10,6 +10,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "genesis:tune": "node src/lib/lab/genesis-tune.ts",
+    "genesis": "node src/lib/lab/genesis-cli.ts",
     "bench": "node src/lib/lab/bench-cli.ts",
     "test": "node --test \"src/**/*.test.ts\""
   },

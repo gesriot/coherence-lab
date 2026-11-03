@@ -154,3 +154,27 @@ test("only the oracle training condition requests privileged labels", () => {
     else run();
   }
 });
+
+import { bootstrap, effect, feasibility, runTrial } from "./genesis.ts";
+
+test("bootstrap and strict paired thresholds preserve both directions and zero boundaries", () => {
+  const sample = [-0.1, 0.2, 0.4, 0.25];
+  assert.deepEqual(bootstrap(sample), bootstrap(sample));
+  assert.equal(effect({ mean: 0.10, low: 0.01, high: 0.25 }), "none");
+  assert.equal(effect({ mean: 0.11, low: 0, high: 0.25 }), "none");
+  assert.equal(effect({ mean: 0.11, low: 0.01, high: 0.25 }), "faster");
+  assert.equal(effect({ mean: -0.10, low: -0.25, high: -0.01 }), "none");
+  assert.equal(effect({ mean: -0.11, low: -0.25, high: 0 }), "none");
+  assert.equal(effect({ mean: -0.11, low: -0.25, high: -0.01 }), "slower");
+});
+
+test("feasibility gates are inclusive and saturation is a separate annotation", () => {
+  assert.deepEqual(feasibility(0.9, [0.75, 0.5], 0.9, 0.9), { positive: true, lower: true, saturated: true });
+  assert.deepEqual(feasibility(0.899, [0.5], 0.89, 0.91), { positive: false, lower: true, saturated: false });
+  assert.equal(feasibility(1, [0.5, 0.751], 0, 0).lower, false);
+});
+
+test("a seeded first-order training run reproduces its held-out learning curve", () => {
+  const run = () => runTrial("first-order", 501, 2001, { motion: 0.03, permanence: 0.003 });
+  assert.deepEqual(run(), run());
+});
