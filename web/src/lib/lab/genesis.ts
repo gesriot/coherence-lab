@@ -2,7 +2,7 @@ import { experimentSeeds, genesisTask } from "./genesis-task.ts";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "./agent.ts";
 import { generator, Learner, type Rates } from "./experience.ts";
 import { conditions, trainEpisode, type Condition, type Labels } from "./genesis-training.ts";
-import { probability, type Models } from "./learning.ts";
+import { probability, type Models, type Vector } from "./learning.ts";
 import type { Ablation, LabConfig } from "./types.ts";
 import { hiddenByOccluder } from "./world.ts";
 
@@ -58,8 +58,8 @@ export interface Point {
   miss: number;
 }
 
-export function evaluateDisappearance(models: Models, seed: number, cfg: LabConfig) {
-  const ep = createEpisode("vanish", seed, cfg.ablation, models);
+export function evaluateDisappearance(models: Models, seed: number, cfg: LabConfig, bodyGain?: Readonly<Vector>) {
+  const ep = createEpisode("vanish", seed, cfg.ablation, models, bodyGain);
   const at = ep.world.objects[0]!.vanishAt!;
   // Identify A's track on the last visible frame, before the first empty observation.
   while (ep.world.t < at - 1) stepEpisode(ep, cfg);
@@ -69,11 +69,13 @@ export function evaluateDisappearance(models: Models, seed: number, cfg: LabConf
   return ep.agent.tracks.some((t) => t.id === id) ? "ghost" : "cleared";
 }
 
-export function evaluate(models: Models, ablation: Ablation, firstSeed: number, seeds: number = EVAL_SEEDS): Point {
+export function evaluate(
+  models: Models, ablation: Ablation, firstSeed: number, seeds: number = EVAL_SEEDS, bodyGain?: Readonly<Vector>,
+): Point {
   let held = 0, clean = 0, untracked = 0, error = 0, predictions = 0;
   const cfg = { ...defaultConfig(), ablation };
   for (let seed = firstSeed; seed < firstSeed + seeds; seed++) {
-    const ep = createEpisode("continuity", seed, ablation, models);
+    const ep = createEpisode("continuity", seed, ablation, models, bodyGain);
     let hidden = false, exit = 0;
     for (let step = 1; step <= 72; step++) {
       const forecasts = ep.agent.tracks.filter((t) => t.boundBlob != null).map((t) => ({
@@ -89,7 +91,7 @@ export function evaluate(models: Models, ablation: Ablation, firstSeed: number, 
       else if (hidden && !exit) exit = step;
       if (exit && step === exit + 1 && snapshot(ep, ablation).evaluator.retained) held++;
     }
-    const outcome = evaluateDisappearance(models, seed, cfg);
+    const outcome = evaluateDisappearance(models, seed, cfg, bodyGain);
     if (outcome === "untracked") untracked++;
     if (outcome === "cleared") clean++;
   }

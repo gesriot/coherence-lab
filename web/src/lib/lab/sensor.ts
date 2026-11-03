@@ -1,3 +1,4 @@
+import type { Vector } from "./learning.ts";
 import { WORLD, hueNoise, wrapHue } from "./math.ts";
 import type { Cell, Observation, World } from "./types.ts";
 import { contains, hiddenByOccluder } from "./world.ts";
@@ -28,11 +29,12 @@ export function observe(
   gazeX: number,
   gazeY: number,
   aperture: number,
+  estimate?: Readonly<Vector>,
 ): Observation {
   const cells: Cell[] = [];
   const cell = (aperture * 2) / GRID;
-  const left = gazeX - aperture;
-  const top = gazeY - aperture;
+  const left = ((world.bodyGain?.[0] ?? 1) / (estimate?.[0] ?? 1)) * gazeX - aperture;
+  const top = ((world.bodyGain?.[1] ?? 1) / (estimate?.[1] ?? 1)) * gazeY - aperture;
   for (let r = 0; r < GRID; r++) {
     for (let c = 0; c < GRID; c++) {
       const x = left + (c + 0.5) * cell;

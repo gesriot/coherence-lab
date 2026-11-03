@@ -1,4 +1,4 @@
-import type { GapStep } from "./learning.ts";
+import type { GapStep, Vector } from "./learning.ts";
 
 export type Shape = "disk" | "square" | "triangle";
 
@@ -50,6 +50,7 @@ export interface Occluder {
 }
 
 export interface World {
+  bodyGain?: Readonly<Vector>;
   seed: number;
   t: number;
   objects: SimObject[];

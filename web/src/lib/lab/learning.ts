@@ -12,6 +12,7 @@ export interface GapStep {
 export const existenceKeys = ["hidden", "open", "miss"] as const;
 type Existence = Record<typeof existenceKeys[number], number>;
 export interface Models {
+  gain: Vector;
   weights: [Features, Features];
   logits: Existence;
 }
@@ -23,6 +24,7 @@ export function existenceLogits(probabilities: Existence): Existence {
 
 export function freshModels(): Models {
   return {
+    gain: [1, 1],
     weights: [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0]],
     logits: existenceLogits(genesisTask.initialExistence),
   };

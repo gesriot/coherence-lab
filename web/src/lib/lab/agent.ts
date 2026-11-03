@@ -1,4 +1,4 @@
-import type { Models } from "./learning.ts";
+import type { Models, Vector } from "./learning.ts";
 import { hypot } from "./math.ts";
 import { createAgent, stepAgent, type Agent } from "./perception.ts";
 import { observe } from "./sensor.ts";
@@ -18,10 +18,13 @@ export interface Episode {
   configEcho: ViewState["configEcho"];
 }
 
-export function createEpisode(scenario: ScenarioId, seed: number, ablation: Ablation = "full", learning?: Models): Episode {
+export function createEpisode(
+  scenario: ScenarioId, seed: number, ablation: Ablation = "full", learning?: Models, bodyGain?: Readonly<Vector>,
+): Episode {
   const world = makeWorld(scenario, seed);
+  if (bodyGain) world.bodyGain = bodyGain;
   const gaze = initialGaze(scenario);
-  const obs = observe(world, gaze.x, gaze.y, gaze.aperture);
+  const obs = observe(world, gaze.x, gaze.y, gaze.aperture, learning?.gain);
   const ep: Episode = {
     agent: createAgent(obs, ablation, learning),
     scenario,
@@ -56,7 +59,7 @@ export function stepEpisode(ep: Episode, cfg: LabConfig): void {
   advanceWorld(ep.world);
 
   const { gazeX, gazeY, aperture } = ep.agent;
-  const obs = observe(ep.world, gazeX, gazeY, aperture);
+  const obs = observe(ep.world, gazeX, gazeY, aperture, ep.agent.learning?.gain);
   let coupling: "intact" | "broken" = "intact";
   if (cfg.replay) {
     if (!ep.clip) ep.clip = ep.recording.slice(-28);
