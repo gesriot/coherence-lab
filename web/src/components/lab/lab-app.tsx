@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, RotateCcw, StepForward } from "lucide-react";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "@/lib/lab/agent";
-import { causalLabel, criterion, decimal, explorationNote, formatRate, sharedDetection, type BenchReport } from "@/lib/lab/bench";
+import { ageAssumption, causalLabel, criterion, decimal, explorationNote, formatRate, sharedDetection, type BenchReport } from "@/lib/lab/bench";
 import type { Ablation, Agreement, AttentionReason, ScenarioId, SourceKind, UncertaintyReason, ViewState } from "@/lib/lab/types";
 import { Stage } from "@/components/lab/stage";
 
@@ -19,7 +19,7 @@ const SCENARIOS: { id: ScenarioId; label: string; hint: string }[] = [
   {
     id: "conflict",
     label: "Конфликт",
-    hint: "Два объекта похожих оттенков находятся в стороне от большого квадрата. Оценщик проверяет, получат ли они разные треки.",
+    hint: "Два объекта похожих оттенков находятся в стороне от большого квадрата. Пара засчитывается, если ближайшие к A и B треки различаются шесть шагов подряд.",
   },
   {
     id: "nursery",
@@ -31,6 +31,7 @@ const SCENARIOS: { id: ScenarioId; label: string; hint: string }[] = [
 const ABLATIONS: { id: Ablation; label: string }[] = [
   { id: "full", label: "Полный контур" },
   { id: "first-order", label: "Первый порядок" },
+  { id: "novelty", label: "Новизна" },
   { id: "record-only", label: "Только запись" },
   { id: "no-schema", label: "Без модели" },
   { id: "dummy-memory", label: "Лишняя память" },
@@ -177,7 +178,7 @@ export function LabApp() {
             ? "Модель не влияет"
             : ablation === "dummy-memory"
               ? "Память без модели"
-              : ablation === "first-order" ? "Первый порядок" : "Без модели";
+              : ABLATIONS.find((mode) => mode.id === ablation)!.label;
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-20 pt-5 sm:px-6">
@@ -522,6 +523,7 @@ export function LabApp() {
           <p className="text-sm text-muted">{criterion}</p>
           {bench?.saturation.map((message) => <p className="text-sm text-muted" key={message}>{message}</p>)}
           {budgetNote && <p className="text-sm text-muted">{budgetNote}</p>}
+          <p className="text-sm text-muted">{ageAssumption}</p>
           <p className="text-sm text-muted">Версия A без обучения: проверяет функцию дирижёра (CTC), но не гипотезу Genesis.</p>
         </div>
         <div className="overflow-x-auto">
@@ -563,11 +565,7 @@ export function LabApp() {
             </tbody>
           </table>
         </div>
-        <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
-          <div className="rounded-lg border border-line px-3 py-2">
-            <dt className="text-xs text-muted">Механизм</dt>
-            <dd>реализован</dd>
-          </div>
+        <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
           <div className="rounded-lg border border-line px-3 py-2">
             <dt className="text-xs text-muted">Причинная роль модели второго порядка</dt>
             <dd>
@@ -575,10 +573,10 @@ export function LabApp() {
             </dd>
           </div>
           <div className="rounded-lg border border-line px-3 py-2">
-            <dt className="text-xs text-muted">Феноменальное сознание</dt>
-            <dd>не установлено</dd>
+            <dt className="text-xs text-muted">Альтернативное объяснение правилом первого порядка</dt>
+            <dd>{bench ? (bench.alternativeExcluded ? "исключено" : "не исключено") : pending}</dd>
           </div>
-          <div className="rounded-lg border border-line px-3 py-2 sm:col-span-3">
+          <div className="rounded-lg border border-line px-3 py-2 sm:col-span-2">
             <dt className="text-xs text-muted">Обнаружение повтора по собственному прогнозу</dt>
             <dd className="mt-2 space-y-2">
               {bench ? bench.replay.map((r) => (
@@ -593,6 +591,14 @@ export function LabApp() {
               )) : pending}
               {bench?.replay.every((r) => r.detected) && <p>{sharedDetection}</p>}
             </dd>
+          </div>
+          <div className="rounded-lg border border-line px-3 py-2">
+            <dt className="text-xs text-muted">Механизм</dt>
+            <dd>реализован</dd>
+          </div>
+          <div className="rounded-lg border border-line px-3 py-2">
+            <dt className="text-xs text-muted">Феноменальное сознание</dt>
+            <dd>не установлено</dd>
           </div>
         </dl>
       </section>
