@@ -190,7 +190,7 @@ test("only the oracle training condition requests privileged labels", () => {
   }
 });
 
-import { area, bootstrap, checkpoints, effect, evaluate, trainingCurve, tuningAreaUnits } from "./genesis.ts";
+import { area, bootstrap, checkpoints, effect, evaluate, replacementVerdict, trainingCurve, tuningAreaUnits } from "./genesis.ts";
 
 test("tuning recovers the exact number of successes across post-training checkpoints", () => {
   const curve = checkpoints.map((_, i) => ({
@@ -211,6 +211,14 @@ test("bootstrap and strict paired thresholds preserve both directions and zero b
   assert.equal(effect({ mean: -0.10, low: -0.25, high: -0.01 }), "none");
   assert.equal(effect({ mean: -0.11, low: -0.25, high: 0 }), "none");
   assert.equal(effect({ mean: -0.11, low: -0.25, high: -0.01 }), "slower");
+});
+
+test("the replacement verdict applies only when the loop beats the first-order control", () => {
+  assert.equal(replacementVerdict("faster", "faster"), "исключено");
+  assert.equal(replacementVerdict("faster", "none"), "не исключено");
+  for (const main of ["none", "slower"] as const) {
+    assert.match(replacementVerdict(main, "faster"), /^не применимо/);
+  }
 });
 
 test("a seeded first-order training run reproduces its held-out learning curve", () => {

@@ -158,3 +158,11 @@ export function effect(e: Estimate): "faster" | "slower" | "none" {
   if (e.mean < -0.10 && e.high < 0) return "slower";
   return "none";
 }
+
+/** A replacement can only explain an advantage that exists over the first-order control. */
+export function replacementVerdict(
+  overFirstOrder: ReturnType<typeof effect>, overReplacement: ReturnType<typeof effect>,
+): string {
+  if (overFirstOrder !== "faster") return "не применимо: ускорения относительно первого порядка нет";
+  return overReplacement === "faster" ? "исключено" : "не исключено";
+}

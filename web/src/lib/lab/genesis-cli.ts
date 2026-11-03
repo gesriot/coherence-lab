@@ -3,7 +3,7 @@ import { controlCurve, controls, controlNames, permitsComparison, stableOracle, 
 import type { Rates } from "./experience.ts";
 import { experimentSeeds, genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
-import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
+import { area, checkpoints, effect, mean, replacementVerdict, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
 // Selected with the last-visible-frame metric on first-order runs 521–530 and evaluation seeds 2041–2060.
 const selectedRates = { motion: 0.03, existence: 0.1 };
@@ -88,7 +88,7 @@ if (ready) {
   console.log("Ускорение обучения контуром (Genesis):", labels[comparisons[0]!]);
   const protocol = { faster: "подтверждён на этих конфигурациях", none: "не подтверждён", slower: "протокол замедляет обучение" };
   console.log("Вклад протокола внимания:", protocol[comparisons[1]!]);
-  console.log("Альтернативное объяснение правилами первого порядка:", comparisons[2] === "faster" ? "исключено" : "не исключено");
+  console.log("Альтернативное объяснение правилами первого порядка:", replacementVerdict(comparisons[0]!, comparisons[2]!));
   if (comparisons[2] === "slower") console.log("Контур замедляет обучение относительно сильного первого порядка.");
 }
 console.log("Обучаются модели движения и существования объекта. Заданы классификация клеток, геометрия сенсора, эфферентная копия, оценка освещения, связывание и оттенки, правила внимания и веса E.");
