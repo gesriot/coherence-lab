@@ -13,4 +13,6 @@ export const genesisTask = {
   oracleRates: { motion: 0.03, existence: 0.003 },
   controlCeiling: 0.75,
   controlFloor: 0.9,
+  stabilityFloor: 0.85,
+  existenceRates: [0.003, 0.01, 0.03, 0.1],
 } as const;

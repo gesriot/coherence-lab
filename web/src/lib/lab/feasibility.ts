@@ -61,7 +61,7 @@ export function designOracle(config: Design = design) {
   let best = -1;
   let chosen: Rates = { motion: 0.03, existence: 0.003 };
   for (const motion of [0.03, 0.1, 0.3, 1]) {
-    for (const existence of [0.003, 0.01, 0.03, 0.1]) {
+    for (const existence of genesisTask.existenceRates) {
       const rates = { motion, existence };
       let successes = 0;
       for (let seed = config.firstRun; seed < config.firstRun + config.runs; seed++) {
@@ -97,17 +97,33 @@ export function designCurve(control: Control, rates: Rates, config: Design = des
   });
 }
 
-export function permitsComparison(curves: Record<Control, readonly number[]>): boolean {
+export function stableOracle(accuracy: readonly number[]): boolean {
+  const first = accuracy.findIndex((score) => score >= genesisTask.controlFloor);
+  return first >= 0 && accuracy.at(-1)! >= genesisTask.controlFloor
+    && accuracy.slice(first).every((score) => score >= genesisTask.stabilityFloor);
+}
+
+export function permitsComparison(
+  curves: Record<Control, readonly number[]>, additionalOracleCurves: readonly (readonly number[])[] = [],
+): boolean {
   const belowCeiling = (values: readonly number[]) =>
     values.length > 0 && values.every((value) => value <= genesisTask.controlCeiling);
   return belowCeiling(curves.frozen) && belowCeiling(curves["keep-all"])
     && (curves.ideal.at(-1) ?? 0) >= genesisTask.controlFloor
-    && (curves.oracle.at(-1) ?? 0) >= genesisTask.controlFloor;
+    && stableOracle(curves.oracle) && additionalOracleCurves.every(stableOracle);
 }
 
 export function runFeasibility(ids: Control[] = controls, config = design) {
   ids.forEach(requireControl);
   const rates = ids.includes("oracle") ? designOracle(config) : { motion: 0, existence: 0 };
   const curves = new Map(ids.map((id) => [id, designCurve(id, rates, config)]));
-  return { curves, rates };
+  const stability = new Map<number, ReturnType<typeof designCurve>>();
+  const oracle = curves.get("oracle");
+  if (oracle) {
+    for (const existence of genesisTask.existenceRates) {
+      stability.set(existence, existence === rates.existence ? oracle
+        : designCurve("oracle", { motion: rates.motion, existence }, config));
+    }
+  }
+  return { curves, rates, stability };
 }

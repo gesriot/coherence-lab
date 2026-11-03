@@ -337,7 +337,10 @@ test("confirmed absence requires three uninterrupted observations of the whole e
 
 test("any failing control blocks the comparison and its verdict", () => {
   const valid = { frozen: [0.5, 0.75], "keep-all": [0.75, 0.75], ideal: [0.9], oracle: [0.5, 0.9] };
-  assert.ok(permitsComparison(valid));
+  assert.ok(permitsComparison(valid, [[0.4, 0.9, 0.85, 0.9]]));
+  assert.ok(!permitsComparison({ ...valid, oracle: [0.9, 0.849, 0.99] }));
+  assert.ok(!permitsComparison(valid, [[0.99, 0.86]]));
+  assert.ok(!permitsComparison(valid, [[0.9, 0.849, 0.99]]));
   for (const control of ["frozen", "keep-all"] as const) {
     assert.equal(permitsComparison({ ...valid, [control]: [0.751, 0.5] }), false);
   }
@@ -351,6 +354,7 @@ test("the feasibility pipeline reproduces the grid choice, curves and final comp
   const run = () => runFeasibility(["frozen", "keep-all", "ideal", "oracle"], small);
   const first = run();
   assert.equal(first.curves.get("oracle")!.at(-1)!.split!.length, 2);
+  assert.deepEqual([...first.stability.keys()], [0.003, 0.01, 0.03, 0.1]);
   assert.deepEqual(run(), first);
 });
 
@@ -362,6 +366,7 @@ test("the task and oracle settings selected on the design seeds are frozen", () 
     keepAllExistence: { hidden: 0.001, open: 0.001, miss: 0.999 },
     idealExistence: { hidden: 0.001, open: 0.02, miss: 0.1 },
     oracleRates: { motion: 0.03, existence: 0.003 }, controlFloor: 0.9, controlCeiling: 0.75,
+    stabilityFloor: 0.85, existenceRates: [0.003, 0.01, 0.03, 0.1],
   });
 });
 
