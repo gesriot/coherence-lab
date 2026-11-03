@@ -363,9 +363,11 @@ test("the task and oracle settings selected on the design seeds are frozen", () 
     trainingSteps: 80, checkpoints: [0, 4, 8, 16, 32, 64],
     curriculum: ["continuity", "vanish", "binding", "nursery", "continuity", "binding", "nursery"],
     uncertaintyGrowth: 0.03, emptyViews: 3, ghostDelay: 20, outdoorFirst: 12, outdoorLast: 35,
+    initialExistence: { hidden: 0.28, open: 0.28, miss: 0.5 },
+    predictionRadiusFraction: 0.5, maxSeenRun: 20, retrospectiveSteps: 30, logitLimit: 9, gradientDelta: 1e-4,
     keepAllExistence: { hidden: 0.001, open: 0.001, miss: 0.999 },
     idealExistence: { hidden: 0.001, open: 0.02, miss: 0.1 },
-    oracleRates: { motion: 0.03, existence: 0.003 }, controlFloor: 0.9, controlCeiling: 0.75,
+    oracleRates: { motion: 0.03, existence: 0.01 }, controlFloor: 0.9, controlCeiling: 0.75,
     stabilityFloor: 0.85, existenceRates: [0.003, 0.01, 0.03, 0.1],
   });
 });

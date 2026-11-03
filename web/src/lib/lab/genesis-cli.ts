@@ -1,36 +1,46 @@
 import { decimal } from "./bench.ts";
-import { controlCurve, controls, controlNames, permitsComparison, type Control } from "./feasibility.ts";
+import { controlCurve, controls, controlNames, permitsComparison, stableOracle, type Control } from "./feasibility.ts";
+import type { Rates } from "./experience.ts";
 import { genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
 import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
-// Selected on the frozen 64-episode task using first-order runs 501–510 and evaluation seeds 2001–2020.
+// Participant rates are set after tuning on the frozen existence task.
 const selectedRates = { motion: 0.03, existence: 0.03 };
 
 const runs = 30;
-const evalSeed = 1001;
+const firstRun = 31;
+const evalSeed = 1021;
 const comparisonIds = ["full", "first-order", "no-protocol", "strong-first-order"] as const;
-type Id = Condition | Control;
+type Id = Condition | Control | "participant-oracle";
 const experiments = new Map<Id, Point[][]>();
 const curve = (id: Id) => experiments.get(id)!;
 const accuracy = (id: Id, i: number) => scoreInterval(curve(id).map((r) => r[i]!.accuracy), 40);
 const interval = (e: Estimate) => `${decimal(e.mean)} [${decimal(e.low)}; ${decimal(e.high)}]`;
-const label = (id: Id) => id === "ideal" || id === "keep-all" ? controlNames[id] : conditions[id].label;
+const label = (id: Id) => {
+  if (id === "participant-oracle") return "Оракул (шаги участников)";
+  return id === "ideal" || id === "keep-all" ? controlNames[id] : conditions[id].label;
+};
 
+const oracleRuns = (rates: Rates) => Array.from({ length: runs }, (_, i) =>
+  controlCurve("oracle", firstRun + i, rates, checkpoints, evalSeed));
 for (const id of controls) {
   if (id === "oracle") {
-    experiments.set(id, Array.from({ length: runs }, (_, i) =>
-      controlCurve(id, i + 1, genesisTask.oracleRates, checkpoints, evalSeed)));
+    experiments.set(id, oracleRuns(genesisTask.oracleRates));
   } else {
-    const fixed = controlCurve(id, 1, genesisTask.oracleRates, checkpoints, evalSeed);
+    const fixed = controlCurve(id, firstRun, genesisTask.oracleRates, checkpoints, evalSeed);
     experiments.set(id, Array.from({ length: runs }, () => fixed));
   }
 }
-const scores = (id: Control) => checkpoints.map((_, i) => accuracy(id, i).mean);
+const sameRates = genesisTask.oracleRates.motion === selectedRates.motion
+  && genesisTask.oracleRates.existence === selectedRates.existence;
+experiments.set("participant-oracle", sameRates ? curve("oracle") : oracleRuns(selectedRates));
+const scores = (id: Id) => checkpoints.map((_, i) => accuracy(id, i).mean);
 const measured = {
   frozen: scores("frozen"), "keep-all": scores("keep-all"), ideal: scores("ideal"), oracle: scores("oracle"),
 };
-const ready = permitsComparison(measured);
+const participantOracle = scores("participant-oracle");
+const ready = permitsComparison(measured, [participantOracle]);
 console.log("Проверки выполнимости");
 for (const id of controls) {
   const lower = id === "frozen" || id === "keep-all";
@@ -38,9 +48,14 @@ for (const id of controls) {
   console.log(`${label(id)} · ${decimal(value)} · порог ${lower ? "≤ 0,75 во всех точках" : "≥ 0,9 в последней точке"}`);
 }
 
+for (const id of ["oracle", "participant-oracle"] as const) {
+  const values = id === "oracle" ? measured.oracle : participantOracle;
+  console.log(`${label(id)} · ${values.map((v) => decimal(v, 4)).join(" ")} · ${stableOracle(values) ? "устойчив" : "неустойчив"}`);
+}
+
 if (ready) {
   for (const id of comparisonIds) {
-    experiments.set(id, Array.from({ length: runs }, (_, i) => runTrial(id, i + 1, evalSeed, selectedRates)));
+    experiments.set(id, Array.from({ length: runs }, (_, i) => runTrial(id, firstRun + i, evalSeed, selectedRates)));
   }
   const saturated = accuracy("full", 1).mean >= 0.9 && accuracy("first-order", 1).mean >= 0.9;
   console.log(saturated ? "Обучение слишком быстрое: задача не различает условия" : "Насыщения в точке 4 нет.");
@@ -48,7 +63,7 @@ if (ready) {
   console.log("Сравнение не интерпретируется: проверка выполнимости не пройдена.");
 }
 
-console.log(`Прогонов: ${runs}. Оценочные зёрна 1001–1020. Интервалы 95% по прогонам.`);
+console.log(`Прогоны ${firstRun}–${firstRun + runs - 1}. Оценочные зёрна 1021–1040. Интервалы 95% по прогонам.`);
 console.log(`Шаги обучения оракула: ${decimal(genesisTask.oracleRates.motion)} / ${decimal(genesisTask.oracleRates.existence)}. Участники: ${decimal(selectedRates.motion)} / ${decimal(selectedRates.existence)}.`);
 console.table(Array.from(experiments.keys()).flatMap((id) => checkpoints.map((n, i) => {
   const points = curve(id).map((r) => r[i]!);

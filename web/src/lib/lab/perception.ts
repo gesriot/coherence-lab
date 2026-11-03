@@ -245,9 +245,10 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
   }
   if (models) {
     t.seenRun = 0;
+    const radius = genesisTask.predictionRadiusFraction * matchRadius(prior);
     t.gapStep = {
       context: t.reason === "occlusion" ? "hidden" : "open",
-      observation: t.reason !== "conflict" && observedEmptyDisk(obs, t.x, t.y, 0.5 * matchRadius(prior), "centers")
+      observation: t.reason !== "conflict" && observedEmptyDisk(obs, t.x, t.y, radius, "centers")
         ? "empty" : "none",
     };
     if (t.reason !== "conflict") {
@@ -308,8 +309,9 @@ export function matchTrack(ep: Agent, prior: Track, blob: Blob, obs: Observation
     radius: Math.sqrt(blob.area / Math.PI) * (2 * obs.aperture / obs.grid),
   };
   if (ep.learning) {
-    t.seenRun = diskInView(obs, prior.x + prior.vx, prior.y + prior.vy, 0.5 * matchRadius(prior))
-      ? Math.min(20, 1 + (prior.boundBlob == null ? 0 : prior.seenRun ?? 0)) : 0;
+    const radius = genesisTask.predictionRadiusFraction * matchRadius(prior);
+    t.seenRun = diskInView(obs, prior.x + prior.vx, prior.y + prior.vy, radius)
+      ? Math.min(genesisTask.maxSeenRun, 1 + (prior.boundBlob == null ? 0 : prior.seenRun ?? 0)) : 0;
     delete t.gapStep;
     setForecast(t, ep.learning, features(motionSamples));
   }

@@ -1,3 +1,4 @@
+import { genesisTask } from "./genesis-task.ts";
 import { clamp, hueDelta } from "./math.ts";
 import type { MotionSample, Track } from "./types.ts";
 
@@ -23,7 +24,7 @@ export function existenceLogits(probabilities: Existence): Existence {
 export function freshModels(): Models {
   return {
     weights: [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0]],
-    logits: existenceLogits({ hidden: 0.28, open: 0.28, miss: 0.5 }),
+    logits: existenceLogits(genesisTask.initialExistence),
   };
 }
 
@@ -93,7 +94,7 @@ export function gapLogLikelihood(models: Models, gap: GapExample): number {
 }
 
 export function fitExistence(models: Models, gap: GapExample, rate: number): void {
-  const delta = 1e-4;
+  const delta = genesisTask.gradientDelta;
   const next = { ...models.logits };
   for (const key of existenceKeys) {
     const theta = models.logits[key];
@@ -102,7 +103,7 @@ export function fitExistence(models: Models, gap: GapExample, rate: number): voi
     models.logits[key] = theta - delta;
     const minus = gapLogLikelihood(models, gap);
     models.logits[key] = theta;
-    next[key] = clamp(theta + rate * (plus - minus) / (2 * delta), -9, 9);
+    next[key] = clamp(theta + rate * (plus - minus) / (2 * delta), -genesisTask.logitLimit, genesisTask.logitLimit);
   }
   models.logits = next;
 }
@@ -155,7 +156,7 @@ export class GapBook {
       const previous = gap.trace;
       gap.trace = predicted;
       if (!found) gap.steps.push(predicted.gapStep!);
-      if (found || (gap.deletedAt != null && step - gap.deletedAt >= 30)) {
+      if (found || (gap.deletedAt != null && step - gap.deletedAt >= genesisTask.retrospectiveSteps)) {
         if (gap.steps.length) {
           const forecast = { x: previous.x + previous.vx, y: previous.y + previous.vy, radius: radius(previous) };
           closed.push({ id, start: gap.start, forecast, seen: gap.seen, steps: gap.steps, found });
