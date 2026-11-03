@@ -1,3 +1,4 @@
+import { genesisTask } from "./genesis-task.ts";
 import { WORLD, hashUnit, wrapHue } from "./math.ts";
 import type { Occluder, ScenarioId, Shape, SimObject, World } from "./types.ts";
 
@@ -154,8 +155,10 @@ export function apparentHue(intrinsic: number, light: number): number {
 /** Schedule permanent losses outdoors for training only, independent of the agent's gaze. */
 export function scheduleOutdoorLosses(world: World): void {
   const preview = { ...world, objects: world.objects.map((o) => ({ ...o })) };
-  const earliest = world.objects.map((_, i) => 12 + Math.floor(24 * hashUnit(world.seed * 3 + i)));
-  for (let t = 1; t <= 80; t++) {
+  const span = genesisTask.outdoorLast - genesisTask.outdoorFirst + 1;
+  const earliest = world.objects.map((_, i) =>
+    genesisTask.outdoorFirst + Math.floor(span * hashUnit(world.seed * 3 + i)));
+  for (let t = 1; t <= genesisTask.trainingSteps; t++) {
     advanceWorld(preview);
     for (const [i, object] of world.objects.entries()) {
       if (object.vanishAt == null && t >= earliest[i]! && !hiddenByOccluder(preview.objects[i]!, world.occluder)) {

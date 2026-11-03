@@ -1,3 +1,6 @@
+import { advanceWorld, hiddenByOccluder, makeWorld, scheduleOutdoorLosses } from "./world.ts";
+import { hashUnit } from "./math.ts";
+import { genesisTask } from "./genesis-task.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
@@ -155,7 +158,7 @@ test("only the oracle training condition requests privileged labels", () => {
   }
 });
 
-import { bootstrap, effect, feasibility, evaluate, trainingCurve } from "./genesis.ts";
+import { bootstrap, effect, evaluate, trainingCurve } from "./genesis.ts";
 
 test("bootstrap and strict paired thresholds preserve both directions and zero boundaries", () => {
   const sample = [-0.1, 0.2, 0.4, 0.25];
@@ -168,12 +171,6 @@ test("bootstrap and strict paired thresholds preserve both directions and zero b
   assert.equal(effect({ mean: -0.11, low: -0.25, high: -0.01 }), "slower");
 });
 
-test("feasibility gates are inclusive and saturation is a separate annotation", () => {
-  assert.deepEqual(feasibility(0.9, [0.75, 0.5], 0.9, 0.9), { positive: true, lower: true, saturated: true });
-  assert.deepEqual(feasibility(0.899, [0.5], 0.89, 0.91), { positive: false, lower: true, saturated: false });
-  assert.equal(feasibility(1, [0.5, 0.751], 0, 0).lower, false);
-});
-
 test("a seeded first-order training run reproduces its held-out learning curve", () => {
   const run = () => trainingCurve("first-order", 701, { motion: 0.03, permanence: 0.003 }, [0, 1],
     (models) => evaluate(models, "first-order", 3001, 1));
@@ -181,7 +178,7 @@ test("a seeded first-order training run reproduces its held-out learning curve",
 });
 
 import { confirmsForecast } from "./genesis.ts";
-import { controlCurve, referenceModel, requireControl } from "./feasibility.ts";
+import { controlCurve, permitsComparison, referenceModel, requireControl, runFeasibility } from "./feasibility.ts";
 
 test("design command rejects every comparison condition", () => {
   for (const id of ["full", "first-order", "no-protocol", "strong-first-order", "constructor"]) {
@@ -254,5 +251,56 @@ test("confirmed absence requires three uninterrupted observations of the whole e
   for (let i = 1; i <= 3; i++) {
     missed = predictMiss(missed, obs, models);
     assert.equal(missed.reason, i === 3 ? "absence" : "no-data");
+  }
+});
+
+
+test("any failing control blocks the comparison and its verdict", () => {
+  const valid = { frozen: [0.5, 0.75], "keep-all": [0.75, 0.75], ideal: [0.9], oracle: [0.5, 0.9] };
+  assert.ok(permitsComparison(valid));
+  for (const control of ["frozen", "keep-all"] as const) {
+    assert.equal(permitsComparison({ ...valid, [control]: [0.751, 0.5] }), false);
+  }
+  for (const control of ["ideal", "oracle"] as const) {
+    assert.equal(permitsComparison({ ...valid, [control]: [1, 0.899] }), false);
+  }
+});
+
+test("the feasibility pipeline reproduces the grid choice, curves and final component evaluations", () => {
+  const small = { firstRun: 701, runs: 2, firstEvalSeed: 3001, seeds: 2, stages: [0, 1] };
+  const run = () => runFeasibility(["frozen", "keep-all", "ideal", "oracle"], small);
+  const first = run();
+  assert.equal(first.curves.get("oracle")!.at(-1)!.split!.length, 2);
+  assert.deepEqual(run(), first);
+});
+
+test("the task and oracle settings selected on the design seeds are frozen", () => {
+  assert.deepEqual(genesisTask, {
+    trainingSteps: 80, checkpoints: [0, 4, 8, 16, 32, 64],
+    curriculum: ["continuity", "vanish", "binding", "nursery", "continuity", "binding", "nursery"],
+    uncertaintyGrowth: 0.03, emptyViews: 3, ghostDelay: 20, outdoorFirst: 12, outdoorLast: 35,
+    keepAllHazard: 0.001, idealHazards: { occlusion: 0.005, absence: 0.5, "no-data": 0.03 },
+    oracleRates: { motion: 0.03, permanence: 0.003 }, controlFloor: 0.9, controlCeiling: 0.75,
+  });
+});
+
+test("nursery training losses occur at the first open step after each seeded deadline", () => {
+  for (let episode = 1; episode <= 10; episode++) {
+    const seed = 10000 + 100 * 701 + episode;
+    const live = makeWorld("nursery", seed);
+    const training = makeWorld("nursery", seed);
+    scheduleOutdoorLosses(training);
+    const expected = live.objects.map((): number | null => null);
+    for (let step = 1; step <= 80; step++) {
+      advanceWorld(live);
+      for (const [i, object] of live.objects.entries()) {
+        const deadline = 12 + Math.floor(24 * hashUnit(seed * 3 + i));
+        if (step >= deadline && expected[i] == null && !hiddenByOccluder(object, live.occluder)) {
+          expected[i] = step;
+        }
+      }
+    }
+    assert.deepEqual(training.objects.map((o) => o.vanishAt), expected);
+    assert.ok(live.objects.every((o) => o.vanishAt == null));
   }
 });

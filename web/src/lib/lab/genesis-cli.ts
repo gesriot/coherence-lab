@@ -1,35 +1,60 @@
 import { decimal } from "./bench.ts";
+import { controlCurve, controls, controlNames, permitsComparison, type Control } from "./feasibility.ts";
+import { genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
-import { area, checkpoints, effect, feasibility, mean, runTrial, scoreInterval, type Estimate } from "./genesis.ts";
+import { area, checkpoints, effect, mean, runTrial, scoreInterval, type Estimate, type Point } from "./genesis.ts";
 
-// Selected by genesis:tune on first-order runs 501–510 before the comparison.
+// Participant rates from the earlier first-order tuning pass; tune again before comparison.
 const selectedRates = { motion: 0.3, permanence: 0.003 };
 
 const runs = 30;
-const ids = Object.keys(conditions) as Condition[];
-const experiments = new Map(ids.map((condition) => [
-  condition, Array.from({ length: runs }, (_, i) => runTrial(condition, i + 1, 1001, selectedRates)),
-]));
-const curve = (id: Condition) => experiments.get(id)!;
-const accuracy = (id: Condition, i: number) => scoreInterval(curve(id).map((r) => r[i]!.accuracy), 40);
+const evalSeed = 1001;
+const comparisonIds = ["full", "first-order", "no-protocol", "strong-first-order"] as const;
+type Id = Condition | Control;
+const experiments = new Map<Id, Point[][]>();
+const curve = (id: Id) => experiments.get(id)!;
+const accuracy = (id: Id, i: number) => scoreInterval(curve(id).map((r) => r[i]!.accuracy), 40);
 const interval = (e: Estimate) => `${decimal(e.mean)} [${decimal(e.low)}; ${decimal(e.high)}]`;
+const label = (id: Id) => id === "ideal" || id === "keep-all" ? controlNames[id] : conditions[id].label;
 
-const frozen = checkpoints.map((_, i) => accuracy("frozen", i).mean);
-const oracle = accuracy("oracle", 4).mean;
-const gates = feasibility(oracle, frozen, accuracy("full", 1).mean, accuracy("first-order", 1).mean);
+for (const id of controls) {
+  if (id === "oracle") {
+    experiments.set(id, Array.from({ length: runs }, (_, i) =>
+      controlCurve(id, i + 1, genesisTask.oracleRates, checkpoints, evalSeed)));
+  } else {
+    const fixed = controlCurve(id, 1, genesisTask.oracleRates, checkpoints, evalSeed);
+    experiments.set(id, Array.from({ length: runs }, () => fixed));
+  }
+}
+const scores = (id: Control) => checkpoints.map((_, i) => accuracy(id, i).mean);
+const measured = {
+  frozen: scores("frozen"), "keep-all": scores("keep-all"), ideal: scores("ideal"), oracle: scores("oracle"),
+};
+const ready = permitsComparison(measured);
 console.log("Проверки выполнимости");
-console.log(`Оракул после 32 эпизодов · ${decimal(oracle)} · порог ≥ 0,9 · ${gates.positive ? "пройдена" : "не пройдена"}`);
-console.log(`Без обучения · максимум ${decimal(Math.max(...frozen))} · порог ≤ 0,75 · ${gates.lower ? "пройдена" : "не пройдена"}`);
-console.log(gates.saturated ? "Обучение слишком быстрое: задача не различает условия" : "Насыщения в точке 4 нет.");
-if (!gates.positive) console.log("Сравнение не интерпретируется: обучаемый блок не формирует модель даже на истинных метках");
-if (!gates.lower) console.log("Сравнение не интерпретируется: задача решается без обучения.");
+for (const id of controls) {
+  const lower = id === "frozen" || id === "keep-all";
+  const value = lower ? Math.max(...measured[id]) : measured[id].at(-1)!;
+  console.log(`${label(id)} · ${decimal(value)} · порог ${lower ? "≤ 0,75 во всех точках" : "≥ 0,9 в последней точке"}`);
+}
 
-console.log(`Прогонов: ${runs}. Оценочные зёрна 1001–1020. Интервалы 95% по прогонам. η движения ${decimal(selectedRates.motion)}, η постоянства ${decimal(selectedRates.permanence)}.`);
-console.table(ids.flatMap((id) => checkpoints.map((n, i) => {
+if (ready) {
+  for (const id of comparisonIds) {
+    experiments.set(id, Array.from({ length: runs }, (_, i) => runTrial(id, i + 1, evalSeed, selectedRates)));
+  }
+  const saturated = accuracy("full", 1).mean >= 0.9 && accuracy("first-order", 1).mean >= 0.9;
+  console.log(saturated ? "Обучение слишком быстрое: задача не различает условия" : "Насыщения в точке 4 нет.");
+} else {
+  console.log("Сравнение не интерпретируется: проверка выполнимости не пройдена.");
+}
+
+console.log(`Прогонов: ${runs}. Оценочные зёрна 1001–1020. Интервалы 95% по прогонам.`);
+console.log(`Шаги обучения оракула: ${decimal(genesisTask.oracleRates.motion)} / ${decimal(genesisTask.oracleRates.permanence)}. Участники: ${decimal(selectedRates.motion)} / ${decimal(selectedRates.permanence)}.`);
+console.table(Array.from(experiments.keys()).flatMap((id) => checkpoints.map((n, i) => {
   const points = curve(id).map((r) => r[i]!);
-  const avg = (key: keyof typeof points[number]) => decimal(mean(points.map((p) => p[key])));
+  const avg = (key: keyof Point) => decimal(mean(points.map((p) => p[key])));
   return {
-    Условие: conditions[id].label, Эпизоды: n, "Точность [95%]": interval(accuracy(id, i)),
+    Условие: label(id), Эпизоды: n, "Точность [95%]": interval(accuracy(id, i)),
     "Удержание A": avg("retention"), "Без призрака": avg("ghostFree"),
     "Без трека": points.reduce((sum, p) => sum + p.untracked, 0),
     "Ошибка движения": avg("motionError"), "h стены": avg("occlusion"),
@@ -37,14 +62,13 @@ console.table(ids.flatMap((id) => checkpoints.map((n, i) => {
   };
 })));
 
-const comparisons = (["first-order", "no-protocol", "strong-first-order"] as const).map((id) => {
-  const delta = curve("full").map((r, i) => area(r) - area(curve(id)[i]!));
-  const estimate = scoreInterval(delta, 160);
-  console.log(`Разность площадей · полный контур минус «${conditions[id].label}» · ${interval(estimate)}`);
-  return effect(estimate);
-});
-
-if (gates.positive && gates.lower) {
+if (ready) {
+  const comparisons = (["first-order", "no-protocol", "strong-first-order"] as const).map((id) => {
+    const delta = curve("full").map((r, i) => area(r) - area(curve(id)[i]!));
+    const estimate = scoreInterval(delta, (checkpoints.length - 1) * 40);
+    console.log(`Разность площадей · полный контур минус «${conditions[id].label}» · ${interval(estimate)}`);
+    return effect(estimate);
+  });
   const labels = { faster: "подтверждено на этих конфигурациях", none: "не подтверждено", slower: "контур замедляет обучение" };
   console.log("Ускорение обучения контуром (Genesis):", labels[comparisons[0]!]);
   const protocol = { faster: "подтверждён на этих конфигурациях", none: "не подтверждён", slower: "протокол замедляет обучение" };

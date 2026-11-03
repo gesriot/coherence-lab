@@ -1,14 +1,14 @@
+import { genesisTask } from "./genesis-task.ts";
 import { createEpisode, defaultConfig, snapshot, stepEpisode, type Episode } from "./agent.ts";
 import { generator, Learner, type Rates } from "./experience.ts";
 import { conditions, trainEpisode, type Condition, type Labels } from "./genesis-training.ts";
 import { hazard, type Models } from "./learning.ts";
-import type { Ablation, ScenarioId } from "./types.ts";
+import type { Ablation } from "./types.ts";
 import { hiddenByOccluder } from "./world.ts";
 
-export const checkpoints = [0, 4, 8, 16, 32, 64] as const;
-const curriculum: ScenarioId[] = ["continuity", "vanish", "binding", "nursery", "continuity", "binding", "nursery"];
+export const { checkpoints } = genesisTask;
+const { curriculum, ghostDelay } = genesisTask;
 const EVAL_SEEDS = 20;
-const GHOST_DELAY = 20;
 
 function nearest<T extends { x: number; y: number }>(objects: T[], position: { x: number; y: number }): T {
   let best = objects[0]!, distance = Infinity;
@@ -80,13 +80,13 @@ export function evaluate(models: Models, ablation: Ablation, firstSeed: number, 
     const vanish = createEpisode("vanish", seed, ablation, models);
     const at = vanish.world.objects[0]!.vanishAt!;
     let id: number | null = null;
-    for (let step = 1; step <= Math.max(40, at + GHOST_DELAY); step++) {
+    for (let step = 1; step <= Math.max(40, at + ghostDelay); step++) {
       stepEpisode(vanish, cfg);
       if (step === at) {
         id = snapshot(vanish, ablation).evaluator.objects[0]!.nearestTrack;
         if (id == null) untracked++;
       }
-      if (step === at + GHOST_DELAY && id != null && !vanish.agent.tracks.some((t) => t.id === id)) clean++;
+      if (step === at + ghostDelay && id != null && !vanish.agent.tracks.some((t) => t.id === id)) clean++;
     }
   }
   return {
@@ -153,11 +153,4 @@ export function effect(e: Estimate): "faster" | "slower" | "none" {
   if (e.mean > 0.10 && e.low > 0) return "faster";
   if (e.mean < -0.10 && e.high < 0) return "slower";
   return "none";
-}
-
-export function feasibility(oracle32: number, frozen: number[], full4: number, first4: number) {
-  return {
-    positive: oracle32 >= 0.9, lower: frozen.every((p) => p <= 0.75),
-    saturated: full4 >= 0.9 && first4 >= 0.9,
-  };
 }

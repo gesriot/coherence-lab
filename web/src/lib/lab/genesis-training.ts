@@ -1,3 +1,4 @@
+import { genesisTask } from "./genesis-task.ts";
 import { createEpisode, defaultConfig, stepEpisode, type Episode } from "./agent.ts";
 import { Learner, type Selection } from "./experience.ts";
 import { scheduleOutdoorLosses } from "./world.ts";
@@ -32,7 +33,7 @@ export function trainEpisode(
   const cfg = { ...defaultConfig(), ablation };
   const book = new GapBook();
   const attentionErrors = new Map<number, number>();
-  for (let step = 1; step <= 80; step++) {
+  for (let step = 1; step <= genesisTask.trainingSteps; step++) {
     const agent = ep.agent;
     const before = agent.tracks;
     const focus = agent.attention.executedFocusId;

@@ -1,3 +1,4 @@
+import { genesisTask } from "./genesis-task.ts";
 import { features, hazard, motion, type Features, type Models } from "./learning.ts";
 import { WORLD, clamp, hueDelta, hypot, lerpHue, wrapHue } from "./math.ts";
 import { classify, extractBlobs, locate, type Location } from "./observe.ts";
@@ -214,7 +215,7 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
     const empty = loc.status === "cell" && loc.kind === "empty" && observedEmptyDisk(obs, t);
     t.emptyViews = empty ? (prior.boundBlob == null ? prior.emptyViews ?? 0 : 0) + 1 : 0;
   }
-  if (loc.status === "outside" || (models && loc.kind === "empty" && t.emptyViews! < 3)) {
+  if (loc.status === "outside" || (models && loc.kind === "empty" && (t.emptyViews ?? 0) < genesisTask.emptyViews)) {
     t.source = t.unseen > 10 ? "remembered" : "predicted";
     t.uncertainty = clamp(t.uncertainty + 0.08);
     t.evidence = clamp(t.evidence - 0.03);
@@ -241,7 +242,7 @@ export function predictMiss(prior: Track, obs: Observation, models?: Models): Tr
   if (models) {
     if (t.reason === "occlusion" || t.reason === "absence" || t.reason === "no-data") {
       t.evidence = prior.evidence * (1 - hazard(models, t.reason));
-      t.uncertainty = clamp(prior.uncertainty + 0.03);
+      t.uncertainty = clamp(prior.uncertainty + genesisTask.uncertaintyGrowth);
     }
     const last = prior.forecastInput!;
     setForecast(t, models, [prior.vx, prior.vy, last[2], last[3], 1]);
