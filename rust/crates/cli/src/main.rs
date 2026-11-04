@@ -36,8 +36,6 @@ fn replay_description(r: &ReplayResult) -> String {
 }
 fn render(report: BenchReport) -> Result<String> {
     let mut lines = vec![
-        // npm writes this preamble to stdout as part of the reference command.
-        String::from("\n> bench\n> node src/lib/lab/bench-cli.ts\n"),
         format!(
             "Удержание A проверяется за 72 шага, различение пары – за 200. На {} конфигурациях полный контур должен опередить каждый из трёх контролей («Первый порядок», «Только запись», «Лишняя память») более чем на 20 п. п. хотя бы по одной задаче. Тот же порог применяется отдельно к сравнению с «Новизной» для проверки альтернативного объяснения. Оценщик обнаруживает повтор по ошибке прогноза за шаги 17–40 при AUC ≥ 0,9.",
             report.configurations

@@ -13,7 +13,7 @@ function run(cwd, command, args) {
 }
 
 run(rust, 'cargo', ['build', '--release', '-p', 'cli']);
-const reference = run(web, 'npm', ['run', 'bench']);
+const reference = run(web, 'node', ['src/lib/lab/bench-cli.ts']);
 const port = run(rust, 'cargo', ['run', '--release', '-p', 'cli', '--', 'bench']);
 if (!port.stdout.equals(reference.stdout)) {
   let at = 0;
