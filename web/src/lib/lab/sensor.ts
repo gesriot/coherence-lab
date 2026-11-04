@@ -14,7 +14,11 @@ function background(world: World, x: number, y: number): Cell {
   return { hue: 0, saturation: 0, lightness };
 }
 
-export function sample(world: World, x: number, y: number, i: number): Cell {
+export type Occlusion = "whole-object" | "per-cell";
+
+export function sample(
+  world: World, x: number, y: number, i: number, occlusion: Occlusion = "whole-object",
+): Cell {
   if (x < 0 || y < 0 || x > WORLD || y > WORLD) {
     return background(world, x, y);
   }
@@ -25,7 +29,7 @@ export function sample(world: World, x: number, y: number, i: number): Cell {
   for (let k = world.objects.length - 1; k >= 0; k--) {
     const o = world.objects[k]!;
     if (o.vanishAt != null && world.t >= o.vanishAt) continue;
-    if (hiddenByOccluder(o, occ)) continue;
+    if (occlusion === "whole-object" && hiddenByOccluder(o, occ)) continue;
     if (!contains(o, x, y)) continue;
     const hue = wrapHue(o.hue + world.light + hueNoise(world.seed, world.t, i) * world.noise);
     return { hue, saturation: 70, lightness: 50 };

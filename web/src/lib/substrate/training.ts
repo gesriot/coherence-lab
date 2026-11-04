@@ -1,6 +1,6 @@
 import { blankState, forward, stepBuffers, type Element } from "./element.ts";
 import { backward, gradientBuffers } from "./gradient.ts";
-import { frames } from "./input.ts";
+import { frames, type Occlusion } from "./input.ts";
 
 export const EPISODES = 2000;
 export const STEPS = 80;
@@ -25,23 +25,32 @@ export function update(weights: Float64Array, grad: Float64Array, adam: ReturnTy
   }
 }
 
+type Hint = (time: number) => Float64Array;
+export type HintFactory = (scenario: (typeof scenarios)[number], seed: number) => Hint;
+
 export function trainer(m: Element) {
   const tape = Array.from({ length: MEMORY }, () => stepBuffers(m));
   const work = gradientBuffers(m), adam = adamState(m), carry = blankState(m);
-  return function trainEpisode(sequence: Iterable<Float64Array>) {
+  return function trainEpisode(sequence: Iterable<Float64Array>, hint?: Hint) {
     carry.fill(0);
+    if (m.hint && !hint) throw new Error("Для положительного контроля нужны метки");
+    const labels: Float64Array[] = [];
+    let time = 0;
     let previous: Float64Array | undefined;
     const targets: Float64Array[] = [];
     function finish() {
-      backward(m, tape, targets, work);
+      backward(m, tape, targets, work, labels);
       carry.set(tape[targets.length - 1]!.state);
       update(m.weights, work.grad, adam);
       targets.length = 0;
+      labels.length = 0;
     }
     for (const next of sequence) {
       if (previous) {
         const t = targets.length;
         forward(m, t === 0 ? carry : tape[t - 1]!.state, previous, tape[t]!);
+        if (m.hint) labels.push(hint!(time));
+        time++;
         targets.push(next);
         if (targets.length === MEMORY) finish();
       }
@@ -51,9 +60,14 @@ export function trainer(m: Element) {
   };
 }
 
-export function train(m: Element, run: number) {
+export function train(
+  m: Element, run: number, occlusion: Occlusion = "whole-object",
+  hook?: HintFactory, onEpisode?: (completed: number) => void,
+) {
   const episode = trainer(m);
   for (let i = 0; i < EPISODES; i++) {
-    episode(frames(scenarios[i % scenarios.length]!, 20000 + 100 * run + i, STEPS));
+    const scenario = scenarios[i % scenarios.length]!, seed = 20000 + 100 * run + i;
+    episode(frames(scenario, seed, STEPS, occlusion), m.hint ? hook?.(scenario, seed) : undefined);
+    onEpisode?.(i + 1);
   }
 }
