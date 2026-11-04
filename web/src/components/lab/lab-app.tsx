@@ -190,7 +190,7 @@ export function LabApp() {
       <header className="mb-5 flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-xl">
           <p className="font-mono text-xs tracking-widest text-accent uppercase">Лаборатория, не личность</p>
-          <h1 className="mt-1 font-display text-4xl text-fg sm:text-5xl">Дирижёр</h1>
+          <h1 className="mt-1 font-display text-4xl text-fg sm:text-5xl">Когерентность</h1>
           <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">
             Минимальный контур в духе Баха: сцена собирается из конкурирующих гипотез, а модель собственного
             восприятия выбирает, куда смотреть. Это не доказательство квалиа.
