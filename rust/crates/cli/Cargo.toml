@@ -1,0 +1,10 @@
+[package]
+name = "cli"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+jscompat.workspace = true
+lab = { path = "../lab" }

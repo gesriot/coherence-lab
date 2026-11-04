@@ -605,8 +605,8 @@ impl Agent {
         let errors = obs
             .cells
             .iter()
-            .zip(&self.guesses)
-            .filter(|(c, e)| classify(**c) != **e)
+            .enumerate()
+            .filter(|(i, cell)| self.guesses.get(*i) != Some(&classify(**cell)))
             .count();
         let action = errors as f64 / obs.cells.len() as f64;
         self.blobs = blobs(&obs);

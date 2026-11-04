@@ -14,6 +14,9 @@ pub fn ceil(x: f64) -> f64 {
 }
 
 pub fn round(x: f64) -> f64 {
+    if x.is_nan() {
+        return quiet_nan(x);
+    }
     if x == 0.0 || !x.is_finite() {
         return x;
     }
@@ -30,9 +33,24 @@ pub fn sign(x: f64) -> f64 {
         x.signum()
     }
 }
+const QUIET_BIT: u64 = 1 << 51;
+
+fn quiet_nan(x: f64) -> f64 {
+    f64::from_bits(x.to_bits() | QUIET_BIT)
+}
+
+// The arm64 builtin reduces from an infinity. The first operand is already
+// quiet when the second operand reaches FMIN/FMAX.
+fn min_max_nan(x: f64, y: f64) -> f64 {
+    if !x.is_nan() || (y.is_nan() && y.to_bits() & QUIET_BIT == 0) {
+        quiet_nan(y)
+    } else {
+        quiet_nan(x)
+    }
+}
 pub fn min(x: f64, y: f64) -> f64 {
     if x.is_nan() || y.is_nan() {
-        f64::NAN
+        min_max_nan(x, y)
     } else if x < y || (x == y && x.is_sign_negative()) {
         x
     } else {
@@ -41,7 +59,7 @@ pub fn min(x: f64, y: f64) -> f64 {
 }
 pub fn max(x: f64, y: f64) -> f64 {
     if x.is_nan() || y.is_nan() {
-        f64::NAN
+        min_max_nan(x, y)
     } else if x > y || (x == y && x.is_sign_positive()) {
         x
     } else {
@@ -54,7 +72,10 @@ pub fn hypot(x: f64, y: f64) -> f64 {
         return f64::INFINITY;
     }
     let m = max(a, b);
-    if m == 0.0 || m.is_nan() {
+    if m.is_nan() {
+        return f64::NAN;
+    }
+    if m == 0.0 {
         return m;
     }
     let (a, b) = (a / m, b / m);
@@ -71,7 +92,10 @@ pub fn hypot_many(args: &[f64]) -> f64 {
         return f64::INFINITY;
     }
     let m = args.iter().fold(0., |m, a| max(m, a.abs()));
-    if m == 0. || m.is_nan() {
+    if m.is_nan() {
+        return f64::NAN;
+    }
+    if m == 0. {
         return m;
     }
     let (mut sum, mut correction) = (0., 0.);
