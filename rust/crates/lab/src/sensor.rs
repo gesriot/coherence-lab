@@ -65,3 +65,64 @@ pub(crate) fn observe(world: &World, gaze: Gaze, estimate: Option<[f64; 2]>) -> 
         .collect();
     Observation { gaze, grid, cells }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Episode, ideal_model};
+    #[test]
+    fn physical_window_and_commanded_center_stay_distinct() {
+        let body = [1.15, 0.85];
+        let mut m = ideal_model();
+        m.gain = [0.9, 1.1];
+        let mut ep = Episode::with_models(
+            Scenario::Continuity,
+            3101,
+            Policy::FirstOrder,
+            Some(m.clone()),
+            Some(body),
+        );
+        for step in 0..5 {
+            if step != 0 {
+                ep.step(&Config::new(Policy::FirstOrder));
+            }
+            let g = ep.agent.obs_gaze;
+            let mut unit = ep.world.clone();
+            unit.body_gain = Some([1.; 2]);
+            let physical = observe(
+                &unit,
+                Gaze::new(
+                    body[0] / m.gain[0] * g.x,
+                    body[1] / m.gain[1] * g.y,
+                    g.aperture,
+                ),
+                None,
+            );
+            assert_eq!(ep.agent.cells, physical.cells);
+            if step == 0 {
+                assert_eq!([g.x, g.y], [16., 50.]);
+                assert_ne!(physical.cells, observe(&unit, g, None).cells);
+            }
+        }
+    }
+    #[test]
+    fn outside_world_texture_requires_a_body() {
+        let ep = Episode::with_models(
+            Scenario::Continuity,
+            3101,
+            Policy::FirstOrder,
+            Some(ideal_model()),
+            Some([1.; 2]),
+        );
+        for center in [-20., 120.] {
+            let g = Gaze::new(center, center, 6.);
+            let x = center - 5.5;
+            assert_eq!(
+                observe(&ep.world, g, None).cells[0].lightness,
+                6. + 4. * sin(0.37 * x + 1.3) * sin(0.29 * x + 0.7)
+            );
+            let mut plain = ep.world.clone();
+            plain.body_gain = None;
+            assert_eq!(observe(&plain, g, None).cells[0].lightness, 6.);
+        }
+    }
+}

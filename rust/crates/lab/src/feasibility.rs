@@ -1,3 +1,4 @@
+use crate::task::object as task;
 use crate::{
     experience::Rates,
     genesis::*,
@@ -8,6 +9,7 @@ use crate::{
 use jscompat::{log, round};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Control {
     Frozen,
     KeepAll,
@@ -42,15 +44,18 @@ impl Control {
         }
     }
 }
+pub fn ideal_model() -> Models {
+    reference_model(Control::Ideal)
+}
 pub(crate) fn reference_model(id: Control) -> Models {
     let mut m = Models::default();
     if matches!(id, Control::Ideal | Control::KeepAll) {
         m.weights[0][2] = 1.;
         m.weights[1][3] = 1.;
         m.logits = if id == Control::Ideal {
-            [0.001, 0.02, 0.1]
+            task::IDEAL
         } else {
-            [0.001, 0.001, 0.999]
+            task::KEEP_ALL
         }
         .map(|p| log(p / (1. - p)));
     }
@@ -146,6 +151,7 @@ fn design_rate(d: Design) -> Rates {
     chosen
 }
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct DesignPoint {
     pub step: u32,
     pub accuracy: f64,
@@ -204,9 +210,13 @@ fn design_curve(id: Control, rates: Rates, d: Design) -> Vec<DesignPoint> {
         .collect()
 }
 pub fn stable(values: &[f64]) -> bool {
-    values.iter().position(|&x| x >= 0.9).is_some_and(|i| {
-        values.last().is_some_and(|x| *x >= 0.9) && values[i..].iter().all(|&x| x >= 0.85)
-    })
+    values
+        .iter()
+        .position(|&x| x >= task::FLOOR)
+        .is_some_and(|i| {
+            values.last().is_some_and(|x| *x >= task::FLOOR)
+                && values[i..].iter().all(|&x| x >= task::STABILITY)
+        })
 }
 pub fn permits(
     frozen: &[f64],
@@ -217,12 +227,13 @@ pub fn permits(
 ) -> bool {
     [frozen, keep]
         .iter()
-        .all(|v| !v.is_empty() && v.iter().all(|&x| x <= 0.75))
-        && ideal.last().is_some_and(|x| *x >= 0.9)
+        .all(|v| !v.is_empty() && v.iter().all(|&x| x <= task::CEILING))
+        && ideal.last().is_some_and(|x| *x >= task::FLOOR)
         && stable(oracle)
         && extra.iter().all(|v| stable(v))
 }
 #[derive(Debug, PartialEq)]
+#[non_exhaustive]
 pub struct DesignReport {
     pub rates: Rates,
     pub curves: Vec<(Control, Vec<DesignPoint>)>,

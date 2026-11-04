@@ -1,3 +1,4 @@
+use crate::task::object as task;
 use crate::{
     Episode,
     experience::{Draw, Generator, Learner, Rates},
@@ -17,6 +18,7 @@ pub const ORACLE_RATES: Rates = Rates::new(0.03, 0.01);
 pub const SELECTED_RATES: Rates = Rates::new(0.03, 0.1);
 pub const EVAL_COUNT: u32 = 20;
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct SeedRange {
     pub first_run: u32,
     pub runs: u32,
@@ -44,6 +46,7 @@ pub(crate) fn curriculum(episode: u32) -> Scenario {
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct Point {
     pub accuracy: f64,
     pub retention: f64,
@@ -71,7 +74,7 @@ fn disappearance(m: &Models, seed: u32, cfg: &Config, body: Option<[f64; 2]>) ->
     let Some(id) = ep.snapshot(cfg.ablation).evaluator.objects[0].nearest_track else {
         return Disappearance::Untracked;
     };
-    while ep.world.t < at + 20 {
+    while ep.world.t < at + task::GHOST_DELAY {
         ep.step(cfg);
     }
     if ep.agent.tracks.iter().any(|t| t.id == id) {
@@ -168,6 +171,7 @@ pub fn trial(id: Condition, seed: u32, eval: u32, rates: Rates) -> Vec<Point> {
     })
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct TrainingFrame {
     episode: u32,
     weights: [[f64; 5]; 2],
@@ -207,6 +211,7 @@ pub fn area(curve: &[Point]) -> f64 {
     average(curve.iter().skip(1).map(|p| p.accuracy))
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Estimate {
     pub mean: f64,
     pub low: f64,
@@ -244,6 +249,7 @@ pub fn score_interval(values: &[f64], units: f64) -> Estimate {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Effect {
     Faster,
     Slower,

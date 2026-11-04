@@ -17,14 +17,18 @@ fn main() -> Result<()> {
         .parse()
         .context("invalid step count")?;
     let mode = args.next().context("missing mode")?;
-    if args.next().is_some() || !matches!(mode.as_str(), "live" | "replay" | "learned") {
-        bail!("expected scenario policy seed steps live|replay|learned");
+    if args.next().is_some() || !matches!(mode.as_str(), "live" | "replay" | "learned" | "ideal") {
+        bail!("expected scenario policy seed steps live|replay|learned|ideal");
     }
     let mut episode = Episode::with_models(
         scenario,
         seed,
         policy,
-        (mode == "learned").then(Models::default),
+        match mode.as_str() {
+            "learned" => Some(Models::default()),
+            "ideal" => Some(lab::ideal_model()),
+            _ => None,
+        },
         None,
     );
     let mut cfg = Config::new(policy);

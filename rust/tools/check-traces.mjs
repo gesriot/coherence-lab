@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { referenceModel } from '../../web/src/lib/lab/feasibility.ts';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,9 +29,18 @@ function difference(a, b, path) {
 }
 
 let total = 0, runs = 0;
-function check(scenario, policy, seed, steps, mode) {
+// JSON.stringify uses JS insertion order (including optional track fields).
+// Take that order from the reference and every value from the Rust frame.
+function ordered(frame, reference) {
+  if (Array.isArray(reference)) return reference.map((v,i) => ordered(frame[i],v));
+  if (reference && typeof reference === 'object') return Object.fromEntries(
+    Object.keys(reference).map(k => [k,ordered(frame[k],reference[k])]));
+  return frame;
+}
+
+function check(scenario, policy, seed, steps, mode, digest) {
   const name = [scenario, policy, seed, mode].join('_');
-  const ep = createEpisode(scenario, seed, policy, mode === 'learned' ? freshModels() : undefined);
+  const ep = createEpisode(scenario, seed, policy, mode === 'ideal' ? referenceModel('ideal') : mode === 'learned' ? freshModels() : undefined);
   const cfg = { ...defaultConfig(), ablation: policy };
   const reference = [];
   for (let i = 0; i <= steps; i++) {
@@ -46,8 +57,10 @@ function check(scenario, policy, seed, steps, mode) {
   const actual = p.stdout.toString().trimEnd().split('\n');
   if (actual.length !== reference.length) throw Error(name + ': frame count ' + actual.length);
   for (let i = 0; i < actual.length; i++) {
-    const diff = difference(JSON.parse(reference[i]), JSON.parse(actual[i]), '$');
+    const r = JSON.parse(actual[i]), t = JSON.parse(reference[i]);
+    const diff = difference(t, r, '$');
     if (diff) throw Error(name + ' frame ' + i + ' ' + diff);
+    if (digest) digest.update(JSON.stringify(ordered(r,t)));
   }
   total += actual.length;
   runs++;
@@ -61,4 +74,8 @@ for (const seed of [1, 2, 17]) {
   }
   check('vanish', 'full', seed, 40, 'learned');
 }
+const digest = createHash('sha256');
+for (const scenario of ['continuity', 'vanish']) check(scenario, 'first-order', 3101, 80, 'ideal', digest);
+const sha = digest.digest('hex');
+if (sha !== '39cd01bdff23f6aebf63328aac7617808cc5cdc6875627e373bf067cd3f31eb5') throw Error('bodyless trajectory: ' + sha);
 console.log(runs + ' episodes, ' + total + ' complete snapshots match');

@@ -1,3 +1,4 @@
+use crate::task::object::{OUTDOOR_FIRST, OUTDOOR_LAST};
 use crate::types::*;
 use jscompat::{hash_unit, sin};
 
@@ -146,7 +147,11 @@ pub(crate) fn schedule_outdoor_losses(world: &mut World) {
     let mut preview = world.clone();
     let deadlines: Vec<_> = (0..world.objects.len())
         .map(|i| {
-            12 + jscompat::floor(24. * hash_unit(f64::from(world.seed) * 3. + i as f64)) as u32
+            OUTDOOR_FIRST
+                + jscompat::floor(
+                    f64::from(OUTDOOR_LAST - OUTDOOR_FIRST + 1)
+                        * hash_unit(f64::from(world.seed) * 3. + i as f64),
+                ) as u32
         })
         .collect();
     for step in 1..=crate::genesis::TRAINING_STEPS {

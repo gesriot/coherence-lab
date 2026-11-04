@@ -1,3 +1,4 @@
+use crate::task::object as task;
 use crate::types::{MotionSample, clamp};
 use jscompat::{exp, log, log1p};
 use serde::Serialize;
@@ -48,7 +49,7 @@ impl Default for Models {
         Self {
             gain: [1., 1.],
             weights: [[0.; 5]; 2],
-            logits: [0.28, 0.28, 0.5].map(|p| log(p / (1. - p))),
+            logits: task::INITIAL.map(|p| log(p / (1. - p))),
         }
     }
 }
@@ -117,7 +118,7 @@ pub(crate) fn likelihood(m: &Models, seen: u32, steps: &[GapStep], found: bool) 
     detected + if found { survival } else { log(lost) }
 }
 pub fn fit_existence(m: &mut Models, seen: u32, steps: &[GapStep], found: bool, rate: f64) {
-    const DELTA: f64 = 1e-4;
+    use task::{DELTA, LOGIT_LIMIT};
     let mut next = m.logits;
     for (k, out) in next.iter_mut().enumerate() {
         let theta = m.logits[k];
@@ -126,7 +127,11 @@ pub fn fit_existence(m: &mut Models, seen: u32, steps: &[GapStep], found: bool, 
         m.logits[k] = theta - DELTA;
         let minus = likelihood(m, seen, steps, found);
         m.logits[k] = theta;
-        *out = clamp(theta + rate * (plus - minus) / (2. * DELTA), -9., 9.);
+        *out = clamp(
+            theta + rate * (plus - minus) / (2. * DELTA),
+            -LOGIT_LIMIT,
+            LOGIT_LIMIT,
+        );
     }
     m.logits = next;
 }

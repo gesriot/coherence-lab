@@ -1,3 +1,4 @@
+use crate::task::object as task;
 use crate::{
     Episode,
     experience::{Draw, GapExample, Learner, Movement, Selection},
@@ -124,7 +125,7 @@ impl GapBook {
                         .expect("unobserved learned tracks have a gap step"),
                 );
             }
-            if found || g.deleted.is_some_and(|at| step - at >= 30) {
+            if found || g.deleted.is_some_and(|at| step - at >= task::RETROSPECTIVE) {
                 if !g.example.steps.is_empty() {
                     g.example.found = found;
                     closed.push(ClosedGap {

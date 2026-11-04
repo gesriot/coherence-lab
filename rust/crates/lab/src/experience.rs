@@ -21,6 +21,10 @@ pub(crate) struct Replay<T> {
     capacity: usize,
 }
 impl<T> Replay<T> {
+    #[cfg(test)]
+    pub(crate) fn weights(&self) -> Vec<f64> {
+        self.entries.iter().map(|e| e.1).collect()
+    }
     pub(crate) fn new(capacity: usize) -> Self {
         Self {
             entries: VecDeque::new(),
@@ -58,6 +62,7 @@ pub(crate) enum Selection {
     Error,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct Rates {
     pub motion: f64,
     pub existence: f64,

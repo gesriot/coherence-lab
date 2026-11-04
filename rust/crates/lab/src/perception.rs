@@ -1,3 +1,4 @@
+use crate::task::object as task;
 use crate::{
     attention,
     learning::{self, Context, Features, GapStep, Models},
@@ -172,7 +173,9 @@ pub(crate) fn miss(prior: &Track, obs: &Observation, models: Option<&Models>) ->
         });
     }
     if loc.is_none()
-        || (models.is_some() && loc == Some(Expectation::Empty) && t.empty_views.unwrap_or(0) < 3)
+        || (models.is_some()
+            && loc == Some(Expectation::Empty)
+            && t.empty_views.unwrap_or(0) < task::EMPTY_VIEWS)
     {
         t.source = if t.unseen > 10 {
             Source::Remembered
@@ -210,12 +213,18 @@ pub(crate) fn miss(prior: &Track, obs: &Observation, models: Option<&Models>) ->
                 Context::Open
             },
             t.reason != Reason::Conflict
-                && empty_disk(obs, t.x, t.y, 0.5 * match_radius(prior), false),
+                && empty_disk(
+                    obs,
+                    t.x,
+                    t.y,
+                    task::RADIUS_FRACTION * match_radius(prior),
+                    false,
+                ),
         );
         t.gap_step = Some(step);
         if t.reason != Reason::Conflict {
             t.evidence = learning::filter(m, prior.evidence, step);
-            t.uncertainty = unit(prior.uncertainty + 0.03);
+            t.uncertainty = unit(prior.uncertainty + task::UNCERTAINTY_GROWTH);
         }
         let last = prior
             .forecast_input
@@ -284,14 +293,14 @@ pub(crate) fn matched(a: &Agent, prior: &Track, b: &Blob, obs: &Observation) -> 
                 obs.gaze,
                 prior.x + prior.vx,
                 prior.y + prior.vy,
-                0.5 * match_radius(prior),
+                task::RADIUS_FRACTION * match_radius(prior),
             ) {
                 (1 + if prior.bound_blob.is_some() {
                     prior.seen_run.unwrap_or(0)
                 } else {
                     0
                 })
-                .min(20)
+                .min(task::MAX_SEEN)
             } else {
                 0
             },

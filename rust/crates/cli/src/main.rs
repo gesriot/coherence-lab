@@ -1,3 +1,4 @@
+mod gain;
 mod genesis;
 use anyhow::{Context, Result, bail};
 use jscompat::{Value, console_log, console_table, to_fixed};
@@ -121,6 +122,9 @@ fn main() -> Result<()> {
         "genesis-feasibility" => genesis::design(&args)?,
         "genesis-tune" => genesis::tune()?,
         "genesis" => genesis::comparison()?,
+        "sensorimotor-feasibility" => gain::design(&args)?,
+        "sensorimotor-tune" => gain::tune()?,
+        "sensorimotor" => gain::comparison(&args)?,
         _ => bail!("unknown command or arguments: {command}"),
     };
     io::stdout()
