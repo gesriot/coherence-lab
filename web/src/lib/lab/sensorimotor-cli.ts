@@ -9,8 +9,8 @@ import { sensorimotorTask } from "./sensorimotor-task.ts";
 import { summarizeGainRuns, gainRuns, type GainRuns } from "./sensorimotor.ts";
 
 const { comparison, evaluationCount, oracleRate } = sensorimotorTask;
-// Previous signal rate, pending first-order tuning on the frozen scene alignment task.
-const selected: number = 0.003;
+// Highest mean scene-alignment calibration area on first-order runs 541–550 (evaluation seeds 2081–2100).
+const selected: number = 0.3;
 const args = process.argv.slice(2);
 if (!sensorimotorTask.rates.some((rate) => rate === selected)) throw new Error("Сначала зафиксируйте выбранный шаг усиления.");
 if (args.length > 1 || (args.length === 1 && Number(args[0]!.replace(",", ".")) !== selected)) {
