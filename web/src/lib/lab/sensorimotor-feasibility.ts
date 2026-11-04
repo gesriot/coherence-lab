@@ -1,9 +1,9 @@
-import { stableOracle } from "./feasibility.ts";
+import { referenceModel, stableOracle } from "./feasibility.ts";
 import { genesisTask } from "./genesis-task.ts";
-import { summarizeGainRuns, gainRuns } from "./sensorimotor.ts";
-import { sensorimotorTask } from "./sensorimotor-task.ts";
+import { summarizeGainRuns, gainRuns, runGainEpisodes, type SeedRange } from "./sensorimotor.ts";
+import { bodyForRun, sensorimotorTask } from "./sensorimotor-task.ts";
 
-export const gainControls = ["frozen", "ideal", "oracle"] as const;
+export const gainControls = ["frozen", "ideal", "oracle", "neutral"] as const;
 type GainControl = typeof gainControls[number];
 
 function requireGainControl(id: string): GainControl {
@@ -30,7 +30,36 @@ export function designOracleRate(scores: { rate: number; finalQ: number }[]): nu
 
 export function designGainControls(requested: readonly string[] = gainControls) {
   const ids = new Set(requested.map(requireGainControl));
-  return [...ids].flatMap((id) => (id === "oracle" ? [...sensorimotorTask.rates] : [0]).map((rate) => ({
+  return [...ids].flatMap((id) => (id === "neutral" || id === "oracle" ? [...sensorimotorTask.rates] : [0]).map((rate) => ({
     id, rate, ...summarizeGainRuns(gainRuns(id, rate, sensorimotorTask.design)),
   })));
+}
+
+export function fixedPointCheck(seeds: SeedRange) {
+  let biasSum = 0, informativeAxes = 0, correct = 0, directionalAxes = 0, offsetSum = 0;
+  for (let i = 0; i < seeds.runs; i++) {
+    const seed = seeds.firstRun + i, body = bodyForRun(seed);
+    offsetSum += Math.abs(body[0] - 1) + Math.abs(body[1] - 1);
+    for (const calibrated of [true, false]) {
+      const models = referenceModel("ideal");
+      if (calibrated) models.gain = [...body];
+      runGainEpisodes("neutral", seed, body, models, null, (_, ratios) => {
+        for (const axis of [0, 1] as const) {
+          const r = ratios[axis];
+          if (r == null) continue;
+          if (calibrated) {
+            biasSum += r - 1;
+            informativeAxes++;
+          } else if (r !== 1) {
+            directionalAxes++;
+            if (Math.sign(r - 1) === Math.sign(body[axis] - 1)) correct++;
+          }
+        }
+      });
+    }
+  }
+  const bias = biasSum / informativeAxes, direction = correct / directionalAxes;
+  const biasLimit = 0.2 * offsetSum / (2 * seeds.runs);
+  return { bias, biasLimit, direction, correct, directionalAxes, informativeAxes,
+    passed: Math.abs(bias) <= biasLimit && direction >= 0.8 };
 }

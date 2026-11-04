@@ -8,6 +8,10 @@ import { alignScene, sceneFrame, type AxisRatios, type FramePair } from "./scene
 import { sensorimotorTask } from "./sensorimotor-task.ts";
 import type { AttentionReason } from "./types.ts";
 
+export const gainConditions = {
+  ...conditions,
+  neutral: { label: "Без модели", gaze: "no-schema", selection: "uniform" },
+} as const;
 export type GainLabel = (estimate: Vector) => Vector;
 export type TrainingCondition = Exclude<Condition, "frozen">;
 
@@ -53,11 +57,13 @@ export class GainLearner {
   }
 }
 
+export type AfterGainStep = (shift: Vector, observed: AxisRatios, informativeDraw: boolean) => void;
+
 export function trainGainEpisode(
   learner: GainLearner | null, ep: Episode, condition: Condition | "neutral", oracleLabel: GainLabel,
-  afterStep?: (shift: Vector, observed: AxisRatios, informativeDraw: boolean) => void,
+  afterStep?: AfterGainStep,
 ): void {
-  const cfg = { ...defaultConfig(), ablation: condition === "neutral" ? "no-schema" as const : conditions[condition].gaze };
+  const cfg = { ...defaultConfig(), ablation: gainConditions[condition].gaze };
   const agent = ep.agent;
   const capture = () => {
     const { x, y, aperture } = agent.obsGaze;

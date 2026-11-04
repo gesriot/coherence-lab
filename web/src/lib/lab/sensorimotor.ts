@@ -2,13 +2,12 @@ import { createEpisode } from "./agent.ts";
 import { referenceModel } from "./feasibility.ts";
 import { evaluate, mean } from "./genesis.ts";
 import { genesisTask } from "./genesis-task.ts";
-import { conditions, type Condition } from "./genesis-training.ts";
-import type { Vector } from "./learning.ts";
+import type { Models, Vector } from "./learning.ts";
 import { bodyForRun, oracleGainLabel, sensorimotorTask } from "./sensorimotor-task.ts";
-import { GainLearner, trainGainEpisode } from "./sensorimotor-training.ts";
+import { gainConditions, GainLearner, trainGainEpisode, type AfterGainStep } from "./sensorimotor-training.ts";
 import { scheduleOutdoorLosses } from "./world.ts";
 
-export type GainCondition = Condition | "ideal";
+export type GainCondition = keyof typeof gainConditions | "ideal";
 export interface SeedRange { firstRun: number; runs: number; firstEvalSeed: number }
 
 export function calibrationError(estimate: Readonly<Vector>, body: Readonly<Vector>): number {
@@ -24,11 +23,25 @@ export function gainArea(curve: readonly { q: number }[]): number {
   return mean(curve.slice(sensorimotorTask.metric.firstScoredIndex).map((p) => p.q));
 }
 
+export const gainTrainingEpisodes = sensorimotorTask.checkpoints.at(-1)! / genesisTask.trainingSteps;
+
+export function runGainEpisodes(
+  condition: keyof typeof gainConditions, seed: number, body: Vector, models: Models,
+  learner: GainLearner | null, afterStep: AfterGainStep,
+): void {
+  for (let episode = 1; episode <= gainTrainingEpisodes; episode++) {
+    const scenario = genesisTask.curriculum[(episode - 1) % genesisTask.curriculum.length]!;
+    const ep = createEpisode(scenario, 10000 + 100 * seed + episode, gainConditions[condition].gaze, models, body);
+    if (scenario === "nursery") scheduleOutdoorLosses(ep.world);
+    trainGainEpisode(learner, ep, condition, (estimate) => oracleGainLabel(body, estimate), afterStep);
+  }
+}
+
 export function gainTrial(id: GainCondition, seed: number, firstEvalSeed: number, rate: number) {
   const body = bodyForRun(seed);
   const models = referenceModel("ideal");
   const condition = id === "ideal" ? "frozen" : id;
-  const policy = conditions[condition];
+  const policy = gainConditions[condition];
   const { checkpoints, evaluationCount } = sensorimotorTask;
   const initialError = calibrationError(sensorimotorTask.metric.baselineGain, body);
   const learner = condition === "frozen" ? null : new GainLearner(models, rate, policy.selection, seed);
@@ -36,19 +49,13 @@ export function gainTrial(id: GainCondition, seed: number, firstEvalSeed: number
 
   let step = 0, saccades = 0;
   const curve = [calibrationPoint(step, models.gain, body, initialError)];
-  const episodes = checkpoints.at(-1)! / genesisTask.trainingSteps;
-  for (let episode = 1; episode <= episodes; episode++) {
-    const scenario = genesisTask.curriculum[(episode - 1) % genesisTask.curriculum.length]!;
-    const ep = createEpisode(scenario, 10000 + 100 * seed + episode, policy.gaze, models, body);
-    if (scenario === "nursery") scheduleOutdoorLosses(ep.world);
-    trainGainEpisode(learner, ep, condition, (estimate) => oracleGainLabel(body, estimate), (shift) => {
-      step++;
-      if (Math.hypot(...shift) > sensorimotorTask.saccadeDistance) saccades++;
-      if (step === checkpoints[curve.length]) curve.push(calibrationPoint(step, models.gain, body, initialError));
-    });
-  }
+  runGainEpisodes(condition, seed, body, models, learner, (shift) => {
+    step++;
+    if (Math.hypot(...shift) > sensorimotorTask.saccadeDistance) saccades++;
+    if (step === checkpoints[curve.length]) curve.push(calibrationPoint(step, models.gain, body, initialError));
+  });
   const secondary = evaluate(models, policy.gaze, firstEvalSeed, evaluationCount, body);
-  return { curve, secondary, saccadesPerEpisode: saccades / episodes };
+  return { curve, secondary, saccadesPerEpisode: saccades / gainTrainingEpisodes };
 }
 
 export function gainRuns(id: GainCondition, rate: number, seeds: SeedRange) {
