@@ -1,6 +1,7 @@
 import { blankState, forward, stepBuffers, type Element } from "./element.ts";
 import { backward, gradientBuffers } from "./gradient.ts";
-import { frames, type Occlusion, type WorldSettings } from "./input.ts";
+import type { Command, MotionSettings } from "./gaze.ts";
+import { frames, movingFrames, type MotionInput, type Occlusion, type WorldSettings } from "./input.ts";
 
 export const EPISODES = 2000;
 export const STEPS = 80;
@@ -32,6 +33,7 @@ export type MapFactory = (
 
 interface TrainingSettings {
   world?: WorldSettings;
+  motion?: MotionSettings;
   episodes?: number;
   weighting?: "uniform" | "wall-exits";
   weightHook?: MapFactory;
@@ -40,13 +42,14 @@ interface TrainingSettings {
 export function trainer(m: Element) {
   const tape = Array.from({ length: MEMORY }, () => stepBuffers(m));
   const work = gradientBuffers(m), adam = adamState(m), carry = blankState(m);
-  return function trainEpisode(sequence: Iterable<Float64Array>, hint?: FrameMap, weightAt?: FrameMap) {
+  return function trainEpisode(sequence: Iterable<Float64Array | MotionInput>, hint?: FrameMap, weightAt?: FrameMap) {
     carry.fill(0);
     if (m.hint && !hint) throw new Error("Для положительного контроля нужны метки");
     const weights = weightAt ? [] as Float64Array[] : undefined;
     const labels: Float64Array[] = [];
     let time = 0;
     let previous: Float64Array | undefined;
+    let command: Command | undefined;
     const targets: Float64Array[] = [];
     function finish() {
       backward(m, tape, targets, work, labels, weights);
@@ -56,10 +59,11 @@ export function trainer(m: Element) {
       labels.length = 0;
       if (weights) weights.length = 0;
     }
-    for (const next of sequence) {
+    for (const observation of sequence) {
+      const next = observation instanceof Float64Array ? observation : observation.frame;
       if (previous) {
         const t = targets.length;
-        forward(m, t === 0 ? carry : tape[t - 1]!.state, previous, tape[t]!);
+        forward(m, t === 0 ? carry : tape[t - 1]!.state, previous, tape[t]!, command);
         if (m.hint) labels.push(hint!(time));
         time++;
         if (weightAt) weights!.push(weightAt(time));
@@ -67,6 +71,7 @@ export function trainer(m: Element) {
         if (targets.length === MEMORY) finish();
       }
       previous = next;
+      command = observation instanceof Float64Array ? undefined : observation.copy;
     }
     if (targets.length) finish();
   };
@@ -82,7 +87,8 @@ export function train(
   for (let i = 0; i < (settings.episodes ?? EPISODES); i++) {
     const scenario = scenarios[i % scenarios.length]!, seed = 20000 + 100 * run + i;
     episode(
-      frames(scenario, seed, STEPS, occlusion, settings.world),
+      settings.motion ? movingFrames(scenario, seed, STEPS, settings.motion) :
+        frames(scenario, seed, STEPS, occlusion, settings.world),
       m.hint ? hook?.(scenario, seed, settings.world) : undefined,
       weighted ? settings.weightHook!(scenario, seed, settings.world) : undefined,
     );

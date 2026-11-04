@@ -27,9 +27,9 @@ test("per-cell occlusion exposes only the part outside the wall; occupancy inclu
   assert.equal(occupancy(w)[inside], 0);
 });
 
-test("gated gradients match central differences for plain, weighted and joint occupancy loss", () => {
-  for (const mode of ["memory", "hinted", "weighted"] as const) {
-    const m = createElement(13, true, 2, 2, mode === "hinted" ? "hinted" : "memory");
+test("gated gradients match central differences for plain, weighted, command-conditioned and joint occupancy loss", () => {
+  for (const mode of ["memory", "hinted", "weighted", "command"] as const) {
+    const m = createElement(13, true, 2, 2, mode === "hinted" ? "hinted" : "memory", mode === "command");
     const weights = mode === "weighted" ? [0, 1, 2].map((t) =>
       Float64Array.from({ length: 4 }, (_, i) => i === t ? 50 : 1)) : undefined;
     assert.deepEqual(Array.from(m.gate!.b), [-1, -1]);
@@ -42,7 +42,7 @@ test("gated gradients match central differences for plain, weighted and joint oc
       let sum = 0;
       for (let t = 0; t < tape.length; t++) {
         const out = tape[t]!;
-        forward(m, t ? tape[t - 1]!.state : initial, x[t]!, out);
+        forward(m, t ? tape[t - 1]!.state : initial, x[t]!, out, mode === "command" ? [1 - t, t % 2] : undefined);
         for (let j = 0; j < 12; j++) {
           sum += (weights?.[t]?.[Math.floor(j / 3)] ?? 1) * (out.prediction[j]! - x[t + 1]![j]!) ** 2;
         }

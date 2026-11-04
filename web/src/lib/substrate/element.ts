@@ -1,4 +1,5 @@
 import { hashUnit } from "../lab/math.ts";
+import type { Command } from "./gaze.ts";
 import { product } from "./matrix.ts";
 
 export const CHANNEL_COUNT = 3;
@@ -9,7 +10,8 @@ export interface Element {
   depth: number;
   directed: boolean;
   inputs: number;
-  // Features: own state, neighbor mean, optional Sobel x/y, then sensory channels.
+  commandInput: boolean;
+  // Features: own state, neighbor mean, optional Sobel x/y, optional command, then sensory channels.
   weights: Float64Array;
   w: Float64Array;
   b: Float64Array;
@@ -22,10 +24,10 @@ export interface Element {
 }
 
 export function createElement(seed: number, directed = true, grid = 16, depth = 16,
-  kind: "plain" | "memory" | "hinted" = "plain",
+  kind: "plain" | "memory" | "hinted" = "plain", commandInput = false,
 ): Element {
   const cells = grid * grid;
-  const inputs = (directed ? 4 : 2) * depth + CHANNEL_COUNT;
+  const inputs = (directed ? 4 : 2) * depth + (commandInput ? 2 : 0) + CHANNEL_COUNT;
   const bias = inputs * depth;
   const readout = bias + depth;
   const end = readout + depth * CHANNEL_COUNT;
@@ -59,7 +61,7 @@ export function createElement(seed: number, directed = true, grid = 16, depth = 
     inverseCount[i] = count === 0 ? 0 : 1 / count;
   }
   return {
-    grid, cells, depth, directed, inputs, weights, gate, hint, neighbors, inverseCount,
+    grid, cells, depth, directed, inputs, commandInput, weights, gate, hint, neighbors, inverseCount,
     w: weights.subarray(0, bias), b: weights.subarray(bias, readout),
     u: weights.subarray(readout, end), c: weights.subarray(end, base),
   };
@@ -70,7 +72,8 @@ export function blankState(m: Element): Float64Array {
   return new Float64Array((m.cells + 1) * m.depth);
 }
 
-export function features(m: Element, prev: Float64Array, x: Float64Array, out: Float64Array) {
+export function features(m: Element, prev: Float64Array, x: Float64Array, out: Float64Array, command?: Command) {
+  if (m.commandInput && !command) throw new Error("Отсутствует копия команды");
   const { cells, depth: k, inputs: f, neighbors: ns } = m;
   for (let i = 0; i < cells; i++) {
     const base = i * f, n = i * 8;
@@ -89,6 +92,10 @@ export function features(m: Element, prev: Float64Array, x: Float64Array, out: F
         out[base + 3 * k + h] = (g + 2 * v + z - a - 2 * b - c) / 8;
       }
     }
+    if (m.commandInput) {
+      out[base + f - 5] = command![0];
+      out[base + f - 4] = command![1];
+    }
     for (let d = 0; d < 3; d++) out[base + f - 3 + d] = x[3 * i + d]!;
   }
 }
@@ -105,9 +112,9 @@ export function stepBuffers(m: Element) {
 }
 export type Step = ReturnType<typeof stepBuffers>;
 
-export function forward(m: Element, prev: Float64Array, x: Float64Array, out: Step): void {
+export function forward(m: Element, prev: Float64Array, x: Float64Array, out: Step, command?: Command): void {
   const { depth: k, cells } = m;
-  features(m, prev, x, out.features);
+  features(m, prev, x, out.features, command);
   product(out.features, m.w, out.state, cells, m.inputs, k);
   if (m.gate) product(out.features, m.gate.w, out.gate!, cells, m.inputs, k);
   for (let i = 0; i < cells; i++) {
