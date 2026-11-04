@@ -6,11 +6,12 @@ import { compareGainConditions } from "./sensorimotor-comparison.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
 import { summarizeGainRuns, gainRuns, type GainRuns } from "./sensorimotor.ts";
 
-const { comparison, evaluationCount, oracleRate, rates } = sensorimotorTask;
+const { comparison, evaluationCount, oracleRate } = sensorimotorTask;
+// Highest mean calibration area on first-order runs 531–540, with final evaluation on seeds 2061–2080.
+const selected: number = 0.003;
 const args = process.argv.slice(2);
-const selected = Number(args[0]?.replace(",", "."));
-if (args.length !== 1 || !rates.some((rate) => rate === selected)) {
-  throw new Error("Передайте шаг из результата подбора: npm run sensorimotor -- <шаг>");
+if (args.length > 1 || (args.length === 1 && Number(args[0]!.replace(",", ".")) !== selected)) {
+  throw new Error(`Для сравнения зафиксирован шаг ${decimal(selected)}.`);
 }
 const interval = (e: Estimate) => `${decimal(e.mean, 4)} [${decimal(e.low, 4)}; ${decimal(e.high, 4)}]`;
 function printCurve(label: string, runs: GainRuns) {
