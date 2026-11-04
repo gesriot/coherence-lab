@@ -53,7 +53,7 @@ export function ridge(x: Float64Array[]) {
   };
 }
 
-function shuffled(labels: number[]) {
+export function shuffled(labels: number[]) {
   const values = labels.slice();
   for (let i = values.length - 1; i > 0; i--) {
     const j = Math.floor(hashUnit(4001 + i) * (i + 1));
@@ -62,7 +62,7 @@ function shuffled(labels: number[]) {
   return values;
 }
 
-function rSquared(y: number[], prediction: number[]) {
+export function rSquared(y: number[], prediction: number[]) {
   const avg = mean(y);
   let residual = 0, variation = 0;
   for (let i = 0; i < y.length; i++) {
