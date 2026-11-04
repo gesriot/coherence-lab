@@ -1,3 +1,4 @@
+mod genesis;
 use anyhow::{Context, Result, bail};
 use jscompat::{Value, console_log, console_table, to_fixed};
 use lab::{BenchReport, Proportion, ReplayResult, Verdict, run_bench};
@@ -106,10 +107,24 @@ fn render(report: BenchReport) -> Result<String> {
     Ok(lines.join("\n"))
 }
 fn main() -> Result<()> {
-    let mut args = std::env::args_os().skip(1);
-    if args.next().as_deref() != Some(std::ffi::OsStr::new("bench")) || args.next().is_some() {
-        bail!("usage: cli bench");
-    }
-    let output = render(run_bench()).context("render benchmark")?;
-    writeln!(io::stdout().lock(), "{output}").context("write benchmark output")
+    let mut args = std::env::args_os().skip(1).map(|arg| {
+        arg.into_string()
+            .ok()
+            .context("argument is not valid UTF-8")
+    });
+    let command = args.next().transpose()?.context("missing subcommand")?;
+    let args: Vec<_> = args.collect::<Result<_>>()?;
+    let output = match command.as_str() {
+        "bench" if args.is_empty() => {
+            format!("{}\n", render(run_bench()).context("render benchmark")?)
+        }
+        "genesis-feasibility" => genesis::design(&args)?,
+        "genesis-tune" => genesis::tune()?,
+        "genesis" => genesis::comparison()?,
+        _ => bail!("unknown command or arguments: {command}"),
+    };
+    io::stdout()
+        .lock()
+        .write_all(output.as_bytes())
+        .context("write command output")
 }

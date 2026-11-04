@@ -141,3 +141,23 @@ pub(crate) fn advance(world: &mut World) {
         world.swapped = true;
     }
 }
+
+pub(crate) fn schedule_outdoor_losses(world: &mut World) {
+    let mut preview = world.clone();
+    let deadlines: Vec<_> = (0..world.objects.len())
+        .map(|i| {
+            12 + jscompat::floor(24. * hash_unit(f64::from(world.seed) * 3. + i as f64)) as u32
+        })
+        .collect();
+    for step in 1..=crate::genesis::TRAINING_STEPS {
+        advance(&mut preview);
+        for (i, obj) in world.objects.iter_mut().enumerate() {
+            if obj.vanish_at.is_none()
+                && step >= deadlines[i]
+                && !hidden(&preview.objects[i], world.wall)
+            {
+                obj.vanish_at = Some(step);
+            }
+        }
+    }
+}

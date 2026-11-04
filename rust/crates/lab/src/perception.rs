@@ -147,10 +147,10 @@ fn empty_disk(obs: &Observation, x: f64, y: f64, r: f64, intersecting: bool) -> 
     }
     true
 }
-fn match_radius(t: &Track) -> f64 {
+pub(crate) fn match_radius(t: &Track) -> f64 {
     BASE_RADIUS + f64::from(t.unseen) * t.velocity_spread
 }
-fn miss(prior: &Track, obs: &Observation, models: Option<&Models>) -> Track {
+pub(crate) fn miss(prior: &Track, obs: &Observation, models: Option<&Models>) -> Track {
     let mut t = prior.clone();
     t.x += prior.vx;
     t.y += prior.vy;
@@ -225,7 +225,7 @@ fn miss(prior: &Track, obs: &Observation, models: Option<&Models>) -> Track {
     finish(&mut t);
     t
 }
-fn matched(a: &Agent, prior: &Track, b: &Blob, obs: &Observation) -> Track {
+pub(crate) fn matched(a: &Agent, prior: &Track, b: &Blob, obs: &Observation) -> Track {
     let dx = b.cx - prior.x;
     let dy = b.cy - prior.y;
     let flow = hypot(dx - prior.vx, dy - prior.vy);

@@ -39,7 +39,7 @@ pub(crate) struct ObjectReport {
     track_hue: Option<f64>,
     dist: Option<f64>,
     pub(crate) occluded: bool,
-    vanished: bool,
+    pub(crate) vanished: bool,
     visible: bool,
 }
 #[derive(Debug, Serialize)]

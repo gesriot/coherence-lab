@@ -4,6 +4,8 @@ use serde::Serialize;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum LabError {
+    #[error("Недопустимое условие проверки выполнимости: {0}")]
+    Control(String),
     #[error("unknown scenario {0}")]
     Scenario(String),
     #[error("unknown policy {0}")]

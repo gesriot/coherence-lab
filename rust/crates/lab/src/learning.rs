@@ -83,7 +83,7 @@ pub fn fit_motion(m: &mut Models, input: Features, target: [f64; 2], rate: f64) 
         }
     }
 }
-fn probabilities(m: &Models) -> [f64; 3] {
+pub(crate) fn probabilities(m: &Models) -> [f64; 3] {
     m.logits.map(|v| 1. / (1. + exp(-v)))
 }
 pub(crate) fn filter(m: &Models, belief: f64, step: GapStep) -> f64 {
@@ -95,7 +95,7 @@ pub(crate) fn filter(m: &Models, belief: f64, step: GapStep) -> f64 {
     let missed = pred * p[2];
     missed / (missed + (1. - pred))
 }
-fn likelihood(m: &Models, seen: u32, steps: &[GapStep], found: bool) -> f64 {
+pub(crate) fn likelihood(m: &Models, seen: u32, steps: &[GapStep], found: bool) -> f64 {
     let [hidden, open, miss] = probabilities(m);
     let detected = f64::from(seen) * (log1p(-open) + log1p(-miss));
     let p = [hidden, open];
@@ -129,4 +129,76 @@ pub fn fit_existence(m: &mut Models, seen: u32, steps: &[GapStep], found: bool, 
         *out = clamp(theta + rate * (plus - minus) / (2. * DELTA), -9., 9.);
     }
     m.logits = next;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jscompat::{abs, hypot, sqrt};
+    #[test]
+    fn motion_converges_and_features_use_elapsed_steps() {
+        let mut m = Models::default();
+        let input = [1.5, -0.5, 1.5, -0.5, 1.];
+        assert_eq!(motion(&m, input), [0.; 2]);
+        for _ in 0..500 {
+            fit_motion(&mut m, input, [1.5, -0.5], 0.1);
+        }
+        let [x, y] = motion(&m, input);
+        assert!(hypot(x - 1.5, y + 0.5) < 1e-8);
+        let samples = [(1, 3., 6.), (5, 9., 6.), (7, 15., 0.)].map(|(step, x, y)| MotionSample {
+            step,
+            x,
+            y,
+            cell_width: 3.,
+        });
+        assert_eq!(features(&samples[..1]), [0., 0., 0., 0., 1.]);
+        assert_eq!(features(&samples), [3., -3., 2., -1., 1.]);
+    }
+    #[test]
+    fn posterior_and_likelihood_account_for_missing_detections() {
+        let m = Models {
+            logits: [0.25, 0.5, 0.2].map(|p| log(p / (1. - p))),
+            ..Models::default()
+        };
+        assert_eq!(filter(&m, 0.8, GapStep::new(Context::Open, false)), 0.4);
+        assert!(
+            abs(filter(&m, 0.8, GapStep::new(Context::Hidden, true)) - 0.12 / (0.12 + 0.4)) < 1e-12
+        );
+        let steps = [
+            GapStep::new(Context::Open, true),
+            GapStep::new(Context::Hidden, false),
+        ];
+        let detected = (0.5 * 0.8) * (0.5 * 0.8);
+        assert!(abs(likelihood(&m, 2, &steps, true) - log(detected * 0.5 * 0.2 * 0.75)) < 1e-12);
+        assert!(
+            abs(likelihood(&m, 2, &steps, false) - log(detected * (0.5 + 0.5 * 0.2 * 0.25)))
+                < 1e-12
+        );
+    }
+    #[test]
+    fn synthetic_gaps_recover_both_hazards_and_missed_detections() {
+        let mut m = Models::default();
+        for epoch in 1..=150 {
+            let rate = 0.04 / sqrt(f64::from(epoch));
+            for i in 0..100 {
+                fit_existence(
+                    &mut m,
+                    1,
+                    &[GapStep::new(Context::Hidden, false)],
+                    i % 4 != 0,
+                    rate,
+                );
+                fit_existence(
+                    &mut m,
+                    1,
+                    &[GapStep::new(Context::Open, i % 10 < 8)],
+                    i % 10 >= 3,
+                    rate,
+                );
+            }
+        }
+        for (x, want) in probabilities(&m).into_iter().zip([0.25, 0.1, 0.2]) {
+            assert!(abs(x - want) < 0.002);
+        }
+    }
 }
