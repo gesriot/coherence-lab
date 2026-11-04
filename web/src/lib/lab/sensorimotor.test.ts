@@ -103,10 +103,11 @@ import { calibrationError, calibrationPoint, gainArea, gainTrial, type GainRuns 
 test("the sensorimotor design, oracle rate and reserved seeds are frozen", () => {
   assert.deepEqual(sensorimotorTask, {
     bodyMinOffset: 0.1, bodyMaxOffset: 0.2, minGazeShift: 0, minGain: 0.5, maxGain: 2, memory: 256,
+    metric: { baselineGain: [1, 1], firstScoredIndex: 1 }, saccadeDistance: 4,
     checkpoints: [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120], rates: [0.003, 0.01, 0.03, 0.1], evaluationCount: 20,
     design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
     tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
-    comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleTieTolerance: 0.005, oracleRate: 0.003,
+    comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleTieTolerance: 0.005, oracleRate: 0.01,
   });
 });
 
@@ -133,6 +134,11 @@ test("no participant or verdict is produced if a sensorimotor control fails", ()
   assert.equal(result.participants.size, 4);
   assert.deepEqual(result.differences.map((d) => d.estimate.mean), [0, 0, 0]);
   assert.match(result.verdicts[2]!, /не применимо/);
+  const precise = compareGainConditions(valid, (id) =>
+    synthetic([0, ...Array(10).fill(id === "full" ? 0.600123 : 0.5)]))!;
+  assert.ok(Math.abs(precise.differences[0]!.estimate.mean - 0.100123) < 1e-12);
+  assert.equal(precise.differences[0]!.effect, "faster");
+
 });
 
 test("calibration progress is relative to the same body's unit estimate and can fall below zero", () => {

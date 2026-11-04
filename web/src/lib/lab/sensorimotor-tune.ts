@@ -12,4 +12,4 @@ for (const rate of rates) {
   console.log(`η усиления ${decimal(rate)} · площадь q ${decimal(score, 6)}`);
   if (score > best) { best = score; chosen = rate; }
 }
-console.log(`Выбран шаг усиления ${decimal(chosen)}. Команда сравнения: npm run sensorimotor -- ${chosen}`);
+console.log(`Выбран шаг усиления ${decimal(chosen)}.`);

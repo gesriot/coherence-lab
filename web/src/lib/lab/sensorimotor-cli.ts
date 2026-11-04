@@ -12,7 +12,7 @@ const selected = Number(args[0]?.replace(",", "."));
 if (args.length !== 1 || !rates.some((rate) => rate === selected)) {
   throw new Error("Передайте шаг из результата подбора: npm run sensorimotor -- <шаг>");
 }
-const interval = (e: Estimate) => `${decimal(e.mean)} [${decimal(e.low)}; ${decimal(e.high)}]`;
+const interval = (e: Estimate) => `${decimal(e.mean, 4)} [${decimal(e.low, 4)}; ${decimal(e.high, 4)}]`;
 function printCurve(label: string, runs: GainRuns) {
   console.log(label);
   const summary = summarizeGainRuns(runs);
@@ -42,8 +42,9 @@ for (const [label, rate, curve] of [
 }
 const result = compareGainConditions(controls, (id) => gainRuns(id, selected, comparison));
 if (result) {
+  console.log("Допуск по калибровке и итоговой точности пройден.");
   for (const [id, curve] of result.participants) printCurve(conditions[id].label, curve);
-  console.log(result.saturated ? "Обучение слишком быстрое: задача не различает условия." : "Насыщения в первой точке обучения нет.");
+  console.log(result.saturated ? "Обучение слишком быстрое: задача не различает условия." : "Насыщения в точке 10 шагов нет.");
   for (const { id, estimate } of result.differences) {
     console.log(`Разность площадей · полный контур минус «${conditions[id].label}» · ${interval(estimate)}`);
   }
