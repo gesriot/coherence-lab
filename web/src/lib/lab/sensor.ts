@@ -14,7 +14,7 @@ function background(world: World, x: number, y: number): Cell {
   return { hue: 0, saturation: 0, lightness };
 }
 
-function sample(world: World, x: number, y: number, i: number): Cell {
+export function sample(world: World, x: number, y: number, i: number): Cell {
   if (x < 0 || y < 0 || x > WORLD || y > WORLD) {
     return background(world, x, y);
   }
