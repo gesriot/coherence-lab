@@ -98,12 +98,12 @@ test("the sensorimotor design runner rejects participant conditions before runni
 
 import { compareGainConditions, type ComparisonControls } from "./sensorimotor-comparison.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
-import type { GainRuns } from "./sensorimotor.ts";
+import { calibrationError, calibrationPoint, gainArea, gainTrial, type GainRuns } from "./sensorimotor.ts";
 
 test("the sensorimotor design, oracle rate and reserved seeds are frozen", () => {
   assert.deepEqual(sensorimotorTask, {
     bodyMinOffset: 0.1, bodyMaxOffset: 0.2, minGazeShift: 0, minGain: 0.5, maxGain: 2, memory: 256,
-    checkpoints: [0, 4, 8, 16, 32, 64], rates: [0.003, 0.01, 0.03, 0.1], evaluationCount: 20,
+    checkpoints: [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120], rates: [0.003, 0.01, 0.03, 0.1], evaluationCount: 20,
     design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
     tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
     comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleRate: 0.003,
@@ -111,20 +111,62 @@ test("the sensorimotor design, oracle rate and reserved seeds are frozen", () =>
 });
 
 test("no participant or verdict is produced if a sensorimotor control fails", () => {
-  const synthetic = (scores: number[]): GainRuns => [scores.map((accuracy) => ({
-    accuracy, retention: accuracy, ghostFree: accuracy, untracked: 0, motionError: 0, hidden: 0.001, open: 0.02,
-    miss: 0.1, calibrationError: 0, gainX: 1, gainY: 1,
-  }))];
-  const good = synthetic([0.6, 0.9, 0.85, 0.9, 0.9, 0.9]);
-  const valid = { frozen: synthetic(Array(6).fill(0.75)), ideal: synthetic(Array(6).fill(1)), oracle: good, participantOracle: good };
-  for (const [key, values] of [
-    ["frozen", [0.5, 0.775, 0.5, 0.5, 0.5, 0.5]], ["ideal", [1, 1, 1, 1, 1, 0.875]],
-    ["oracle", [0.5, 0.9, 0.825, 0.9, 0.9, 1]], ["participantOracle", [0.5, 0.9, 0.9, 0.9, 0.9, 0.875]],
-  ] satisfies [keyof ComparisonControls, number[]][]) {
-    assert.equal(compareGainConditions({ ...valid, [key]: synthetic(values) }, () => assert.fail("gate opened")), null);
+  const synthetic = (scores: number[], accuracy = 1): GainRuns => [{
+    curve: scores.map((q, i) => ({ step: sensorimotorTask.checkpoints[i]!, q, error: 0, gainX: 1, gainY: 1 })),
+    secondary: { accuracy, retention: accuracy, ghostFree: accuracy, untracked: 0, motionError: 0, hidden: 0.001, open: 0.02, miss: 0.1 },
+    saccadesPerEpisode: 0,
+  }];
+  const zeros = sensorimotorTask.checkpoints.map((): number => 0);
+  const ones = zeros.map(() => 1);
+  const stable = [0, 0.9, 0.85, ...ones.slice(3)];
+  const good = synthetic(stable);
+  const valid = { frozen: synthetic(zeros, 0.75), ideal: synthetic(ones), oracle: good, participantOracle: good };
+  for (const [key, invalid] of [
+    ["frozen", synthetic([0.01, ...zeros.slice(1)], 0.75)], ["frozen", synthetic(zeros, 0.775)],
+    ["ideal", synthetic([0.99, ...ones.slice(1)])], ["ideal", synthetic(ones, 0.875)],
+    ["oracle", synthetic([0, 0.90, 0.84, ...ones.slice(3)])], ["oracle", synthetic(stable, 0.875)],
+    ["participantOracle", synthetic([...stable.slice(0, -1), 0.899])], ["participantOracle", synthetic(stable, 0.875)],
+  ] satisfies [keyof ComparisonControls, GainRuns][]) {
+    assert.equal(compareGainConditions({ ...valid, [key]: invalid }, () => assert.fail("gate opened")), null);
   }
   const result = compareGainConditions(valid, () => good)!;
   assert.equal(result.participants.size, 4);
   assert.deepEqual(result.differences.map((d) => d.estimate.mean), [0, 0, 0]);
   assert.match(result.verdicts[2]!, /не применимо/);
+});
+
+test("calibration progress is relative to the same body's unit estimate and can fall below zero", () => {
+  const body: Vector = [0.875, 1.25];
+  const initial = calibrationError([1, 1], body);
+  assert.equal(initial, 0.1875);
+  assert.equal(calibrationPoint(0, [1, 1], body, initial).q, 0);
+  assert.equal(calibrationPoint(0, body, body, initial).q, 1);
+  assert.equal(calibrationPoint(10, [1.125, 0.75], body, initial).q, -1);
+});
+
+test("area equally weights every checkpoint after zero and preserves continuous progress", () => {
+  const values = [0, -0.56123, 0.11, 0.24, 0.35, 0.46, 0.57, 0.68, 0.79, 0.89, 1];
+  assert.ok(Math.abs(gainArea(values.map((q) => ({ q }))) - 0.452877) < 1e-12);
+  assert.equal(gainArea([{ q: 1 }, { q: 0.25 }, { q: 0.75 }]), 0.5);
+});
+
+test("calibration checkpoints capture completed environment steps across episode boundaries", () => {
+  const body = bodyForRun(801), models = referenceModel("ideal");
+  const learner = new GainLearner(models, 0.01, "uniform", 801);
+  const { curve } = gainTrial("oracle", 801, 3101, 0.01);
+  assert.deepEqual(curve.map((p) => p.step), [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120]);
+  const cfg = { ...defaultConfig(), ablation: "first-order" as const };
+  let steps = 0;
+  for (const [index, scenario] of (["continuity", "vanish"] as const).entries()) {
+    const ep = createEpisode(scenario, 10000 + 100 * 801 + index + 1, cfg.ablation, models, body);
+    for (let local = 0; local < 80; local++) {
+      const agent = ep.agent, before = agent.tracks, gaze = agent.obsGaze;
+      stepEpisode(ep, cfg);
+      learner.observe(before, agent.tracks, [agent.obsGaze.x - gaze.x, agent.obsGaze.y - gaze.y], null, 0);
+      learner.update((shift, estimate) => oracleGainLabel(body, shift, estimate));
+      steps++;
+      const point = curve.find((p) => p.step === steps);
+      if (point) assert.deepEqual([point.gainX, point.gainY], models.gain);
+    }
+  }
 });

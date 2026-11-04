@@ -1,6 +1,6 @@
 import { stableOracle } from "./feasibility.ts";
 import { genesisTask } from "./genesis-task.ts";
-import { averageGainCurve, gainRuns } from "./sensorimotor.ts";
+import { summarizeGainRuns, gainRuns } from "./sensorimotor.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
 
 export const gainControls = ["frozen", "ideal", "oracle"] as const;
@@ -12,16 +12,19 @@ function requireGainControl(id: string): GainControl {
   return control;
 }
 
-export function gainControlsPass(frozen: number[], ideal: number[], oracles: number[][]): boolean {
+type ControlSummary = Pick<ReturnType<typeof summarizeGainRuns>, "accuracy" | "curve">;
+
+export function gainControlsPass(frozen: ControlSummary, ideal: ControlSummary, oracles: ControlSummary[]): boolean {
   const count = sensorimotorTask.checkpoints.length;
-  return frozen.length === count && frozen.every((a) => a <= genesisTask.controlCeiling)
-    && ideal.length === count && ideal.every((a) => a >= genesisTask.controlFloor)
-    && oracles.length > 0 && oracles.every((curve) => curve.length === count && stableOracle(curve));
+  return frozen.curve.length === count && frozen.curve.every((p) => p.q === 0) && frozen.accuracy <= genesisTask.controlCeiling
+    && ideal.curve.length === count && ideal.curve.every((p) => p.q === 1) && ideal.accuracy >= genesisTask.controlFloor
+    && oracles.length > 0 && oracles.every((o) => o.curve.length === count
+      && stableOracle(o.curve.map((p) => p.q)) && o.accuracy >= genesisTask.controlFloor);
 }
 
 export function designGainControls(requested: readonly string[] = gainControls) {
   const ids = new Set(requested.map(requireGainControl));
   return [...ids].flatMap((id) => (id === "oracle" ? [...sensorimotorTask.rates] : [0]).map((rate) => ({
-    id, rate, curve: averageGainCurve(gainRuns(id, rate, sensorimotorTask.design)),
+    id, rate, ...summarizeGainRuns(gainRuns(id, rate, sensorimotorTask.design)),
   })));
 }

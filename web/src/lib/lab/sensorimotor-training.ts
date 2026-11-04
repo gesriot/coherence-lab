@@ -57,15 +57,19 @@ export class GainLearner {
   }
 }
 
-export function trainGainEpisode(learner: GainLearner, ep: Episode, condition: TrainingCondition, oracleLabel: GainLabel): void {
+export function trainGainEpisode(
+  learner: GainLearner | null, ep: Episode, condition: Condition, oracleLabel: GainLabel,
+  afterStep?: (shift: Vector) => void,
+): void {
   const cfg = { ...defaultConfig(), ablation: conditions[condition].gaze };
   for (let step = 1; step <= genesisTask.trainingSteps; step++) {
     const agent = ep.agent;
     const before = agent.tracks, previous = agent.obsGaze;
     const focus = agent.attention.executedFocusId;
     stepEpisode(ep, cfg);
-    learner.observe(before, agent.tracks, [agent.obsGaze.x - previous.x, agent.obsGaze.y - previous.y],
-      focus, agent.selfError ?? 0);
-    learner.update(condition === "oracle" ? oracleLabel : undefined);
+    const shift: Vector = [agent.obsGaze.x - previous.x, agent.obsGaze.y - previous.y];
+    learner?.observe(before, agent.tracks, shift, focus, agent.selfError ?? 0);
+    learner?.update(condition === "oracle" ? oracleLabel : undefined);
+    afterStep?.(shift);
   }
 }

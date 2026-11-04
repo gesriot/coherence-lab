@@ -1,10 +1,10 @@
 import { decimal } from "./bench.ts";
 import { controlNames, stableOracle } from "./feasibility.ts";
-import { scoreInterval, type Estimate } from "./genesis.ts";
+import { bootstrap, scoreInterval, type Estimate } from "./genesis.ts";
 import { conditions } from "./genesis-training.ts";
 import { compareGainConditions } from "./sensorimotor-comparison.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
-import { averageGainCurve, gainRuns, type GainRuns } from "./sensorimotor.ts";
+import { summarizeGainRuns, gainRuns, type GainRuns } from "./sensorimotor.ts";
 
 const { comparison, evaluationCount, oracleRate, rates } = sensorimotorTask;
 const args = process.argv.slice(2);
@@ -15,11 +15,14 @@ if (args.length !== 1 || !rates.some((rate) => rate === selected)) {
 const interval = (e: Estimate) => `${decimal(e.mean)} [${decimal(e.low)}; ${decimal(e.high)}]`;
 function printCurve(label: string, runs: GainRuns) {
   console.log(label);
-  console.table(averageGainCurve(runs).map((p, i) => ({
-    Эпизод: p.step, "Точность [95%]": interval(scoreInterval(runs.map((r) => r[i]!.accuracy), 2 * evaluationCount)),
-    "Удержание A": decimal(p.retention), "Без призрака": decimal(p.ghostFree),
-    "Ошибка калибровки": decimal(p.calibrationError, 5), "Оценка X": decimal(p.gainX, 5), "Оценка Y": decimal(p.gainY, 5),
+  const summary = summarizeGainRuns(runs);
+  console.table(summary.curve.map((p, i) => ({
+    Шаг: p.step, "q [95%]": interval(bootstrap(runs.map((r) => r.curve[i]!.q))),
+    "Ошибка калибровки": decimal(p.error, 5), "Оценка X": decimal(p.gainX, 5), "Оценка Y": decimal(p.gainY, 5),
   })));
+  const accuracy = scoreInterval(runs.map((r) => r.secondary.accuracy), 2 * evaluationCount);
+  console.log(`Итоговая точность ${interval(accuracy)} · удержание A ${decimal(summary.retention)} · без призрака ${decimal(summary.ghostFree)}`);
+  console.log(`Саккад на эпизод: ${decimal(summary.saccadesPerEpisode)}`);
 }
 
 const { firstRun, runs, firstEvalSeed } = comparison;
@@ -35,7 +38,7 @@ for (const [label, rate, curve] of [
   ["Оракул", oracleRate, oracle], ["Оракул (шаг участников)", selected, controls.participantOracle],
 ] as const) {
   printCurve(`${label} · η усиления ${decimal(rate)}`, curve);
-  console.log(stableOracle(averageGainCurve(curve).map((p) => p.accuracy)) ? "Кривая устойчива." : "Кривая неустойчива.");
+  console.log(stableOracle(summarizeGainRuns(curve).curve.map((p) => p.q)) ? "Кривая устойчива." : "Кривая неустойчива.");
 }
 const result = compareGainConditions(controls, (id) => gainRuns(id, selected, comparison));
 if (result) {
