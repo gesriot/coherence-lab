@@ -1,7 +1,7 @@
-import { advanceWorld, contains, makeWorld, scheduleOutdoorLosses } from "../lab/world.ts";
+import { advanceWorld, contains } from "../lab/world.ts";
 import type { World } from "../lab/types.ts";
-import { CELL_SIZE, GRID } from "./input.ts";
-import type { HintFactory } from "./training.ts";
+import { CELL_SIZE, GRID, substrateWorld } from "./input.ts";
+import type { MapFactory } from "./training.ts";
 
 export function occupancy(world: World) {
   return Float64Array.from({ length: GRID * GRID }, (_, i) => {
@@ -12,9 +12,8 @@ export function occupancy(world: World) {
 }
 
 // Only the positive control constructs this independent, synchronized source of labels.
-export const occupancyHook: HintFactory = (scenario, seed) => {
-  const world = makeWorld(scenario, seed);
-  if (scenario === "nursery") scheduleOutdoorLosses(world);
+export const occupancyHook: MapFactory = (scenario, seed, settings) => {
+  const world = substrateWorld(scenario, seed, settings);
   return (time) => {
     while (world.t < time) advanceWorld(world);
     if (world.t !== time) throw new Error("Нарушен порядок кадров подсказки");

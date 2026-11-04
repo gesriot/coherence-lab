@@ -1,6 +1,6 @@
 import { blankState, forward, stepBuffers, type Element } from "./element.ts";
 import { backward, gradientBuffers } from "./gradient.ts";
-import { frames, type Occlusion } from "./input.ts";
+import { frames, type Occlusion, type WorldSettings } from "./input.ts";
 
 export const EPISODES = 2000;
 export const STEPS = 80;
@@ -25,25 +25,36 @@ export function update(weights: Float64Array, grad: Float64Array, adam: ReturnTy
   }
 }
 
-type Hint = (time: number) => Float64Array;
-export type HintFactory = (scenario: (typeof scenarios)[number], seed: number) => Hint;
+type FrameMap = (time: number) => Float64Array;
+export type MapFactory = (
+  scenario: (typeof scenarios)[number], seed: number, settings?: WorldSettings,
+) => FrameMap;
+
+interface TrainingSettings {
+  world?: WorldSettings;
+  episodes?: number;
+  weighting?: "uniform" | "wall-exits";
+  weightHook?: MapFactory;
+}
 
 export function trainer(m: Element) {
   const tape = Array.from({ length: MEMORY }, () => stepBuffers(m));
   const work = gradientBuffers(m), adam = adamState(m), carry = blankState(m);
-  return function trainEpisode(sequence: Iterable<Float64Array>, hint?: Hint) {
+  return function trainEpisode(sequence: Iterable<Float64Array>, hint?: FrameMap, weightAt?: FrameMap) {
     carry.fill(0);
     if (m.hint && !hint) throw new Error("Для положительного контроля нужны метки");
+    const weights = weightAt ? [] as Float64Array[] : undefined;
     const labels: Float64Array[] = [];
     let time = 0;
     let previous: Float64Array | undefined;
     const targets: Float64Array[] = [];
     function finish() {
-      backward(m, tape, targets, work, labels);
+      backward(m, tape, targets, work, labels, weights);
       carry.set(tape[targets.length - 1]!.state);
       update(m.weights, work.grad, adam);
       targets.length = 0;
       labels.length = 0;
+      if (weights) weights.length = 0;
     }
     for (const next of sequence) {
       if (previous) {
@@ -51,6 +62,7 @@ export function trainer(m: Element) {
         forward(m, t === 0 ? carry : tape[t - 1]!.state, previous, tape[t]!);
         if (m.hint) labels.push(hint!(time));
         time++;
+        if (weightAt) weights!.push(weightAt(time));
         targets.push(next);
         if (targets.length === MEMORY) finish();
       }
@@ -62,12 +74,18 @@ export function trainer(m: Element) {
 
 export function train(
   m: Element, run: number, occlusion: Occlusion = "whole-object",
-  hook?: HintFactory, onEpisode?: (completed: number) => void,
+  hook?: MapFactory, onEpisode?: (completed: number) => void, settings: TrainingSettings = {},
 ) {
   const episode = trainer(m);
-  for (let i = 0; i < EPISODES; i++) {
+  const weighted = settings.weighting === "wall-exits";
+  if (weighted && !settings.weightHook) throw new Error("Для веса выхода нужен хук оценщика");
+  for (let i = 0; i < (settings.episodes ?? EPISODES); i++) {
     const scenario = scenarios[i % scenarios.length]!, seed = 20000 + 100 * run + i;
-    episode(frames(scenario, seed, STEPS, occlusion), m.hint ? hook?.(scenario, seed) : undefined);
+    episode(
+      frames(scenario, seed, STEPS, occlusion, settings.world),
+      m.hint ? hook?.(scenario, seed, settings.world) : undefined,
+      weighted ? settings.weightHook!(scenario, seed, settings.world) : undefined,
+    );
     onEpisode?.(i + 1);
   }
 }

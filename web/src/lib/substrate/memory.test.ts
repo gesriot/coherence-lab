@@ -27,9 +27,11 @@ test("per-cell occlusion exposes only the part outside the wall; occupancy inclu
   assert.equal(occupancy(w)[inside], 0);
 });
 
-test("gated gradients match central differences for frame loss and joint occupancy loss", () => {
-  for (const kind of ["memory", "hinted"] as const) {
-    const m = createElement(13, true, 2, 2, kind);
+test("gated gradients match central differences for plain, weighted and joint occupancy loss", () => {
+  for (const mode of ["memory", "hinted", "weighted"] as const) {
+    const m = createElement(13, true, 2, 2, mode === "hinted" ? "hinted" : "memory");
+    const weights = mode === "weighted" ? [0, 1, 2].map((t) =>
+      Float64Array.from({ length: 4 }, (_, i) => i === t ? 50 : 1)) : undefined;
     assert.deepEqual(Array.from(m.gate!.b), [-1, -1]);
     const x = Array.from({ length: 4 }, (_, t) =>
       Float64Array.from({ length: 12 }, (_, i) => 0.3 + Math.sin(0.3 * i + t) / 4));
@@ -41,13 +43,15 @@ test("gated gradients match central differences for frame loss and joint occupan
       for (let t = 0; t < tape.length; t++) {
         const out = tape[t]!;
         forward(m, t ? tape[t - 1]!.state : initial, x[t]!, out);
-        for (let j = 0; j < 12; j++) sum += (out.prediction[j]! - x[t + 1]![j]!) ** 2;
+        for (let j = 0; j < 12; j++) {
+          sum += (weights?.[t]?.[Math.floor(j / 3)] ?? 1) * (out.prediction[j]! - x[t + 1]![j]!) ** 2;
+        }
         if (m.hint) for (let i = 0; i < 4; i++) sum += 3 * (out.occupancy![i]! - labels[t]![i]!) ** 2;
       }
       return sum / 36;
     }
     const expected = loss(), work = gradientBuffers(m);
-    assert.ok(Math.abs(backward(m, tape, x.slice(1), work, m.hint ? labels : undefined) - expected) < 1e-14);
+    assert.ok(Math.abs(backward(m, tape, x.slice(1), work, m.hint ? labels : undefined, weights) - expected) < 1e-14);
     for (let i = 0; i < m.weights.length; i++) {
       const saved = m.weights[i]!;
       m.weights[i] = saved + 1e-5;
@@ -57,7 +61,7 @@ test("gated gradients match central differences for frame loss and joint occupan
       m.weights[i] = saved;
       const analytic = work.grad[i]!;
       const rel = Math.abs(analytic - numeric) / Math.max(Math.abs(analytic), Math.abs(numeric));
-      assert.ok(rel <= 1e-6, `${kind} parameter ${i}: ${rel}`);
+      assert.ok(rel <= 1e-6, `${mode} parameter ${i}: ${rel}`);
     }
   }
 });

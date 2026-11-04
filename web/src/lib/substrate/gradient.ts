@@ -41,7 +41,7 @@ function scatter(m: Element, df: Float64Array, ds: Float64Array) {
 // either end of the segment, even though its initial state may be nonzero.
 export function backward(
   m: Element, tape: Step[], targets: Float64Array[], work: ReturnType<typeof gradientBuffers>,
-  labels?: Float64Array[],
+  labels?: Float64Array[], weights?: Float64Array[],
 ): number {
   const { cells: n, depth: k, inputs: f } = m;
   const { grad, ds, residual, df, ft, wt } = work;
@@ -57,12 +57,14 @@ export function backward(
   if (m.gate) transpose(m.gate.w, work.zt!, f, k);
   for (let t = targets.length - 1; t >= 0; t--) {
     const { prediction, state, features } = tape[t]!;
+    const cellWeights = weights?.[t];
     for (let i = 0; i < n; i++) {
+      const weight = cellWeights ? cellWeights[i]! : 1;
       for (let d = 0; d < 3; d++) {
         const j = 3 * i + d;
         const error = prediction[j]! - targets[t]![j]!;
-        loss += error * error;
-        residual[j] = 2 * norm * error;
+        loss += weight * (error * error);
+        residual[j] = 2 * norm * error * weight;
         grad[end + d] += residual[j]!;
       }
       let hintError = 0;

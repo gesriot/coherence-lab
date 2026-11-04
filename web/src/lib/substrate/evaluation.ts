@@ -1,7 +1,7 @@
-import { contains, advanceWorld, hiddenByOccluder, makeWorld } from "../lab/world.ts";
+import { contains, advanceWorld, hiddenByOccluder } from "../lab/world.ts";
 import type { Occluder, SimObject, World } from "../lab/types.ts";
 import { blankState, forward, stepBuffers, type Element } from "./element.ts";
-import { CELL_SIZE, frame, GRID, type Occlusion } from "./input.ts";
+import { CELL_SIZE, frame, GRID, substrateWorld, type Occlusion } from "./input.ts";
 
 import { inWall, visibility } from "./visibility.ts";
 import { occupancy } from "./occupancy.ts";
@@ -107,7 +107,7 @@ function replay(
   model: Element | null, scenario: "continuity" | "vanish", seed: number,
   rows: Examples, totals?: Sums, occlusion: Occlusion = "whole-object",
 ) {
-  const world = makeWorld(scenario, seed);
+  const world = substrateWorld(scenario, seed);
   const wall = wallCells(world.occluder), a = world.objects[0]!;
   const tape = model ? [stepBuffers(model), stepBuffers(model)] : null;
   let state = model ? blankState(model) : new Float64Array(0);
