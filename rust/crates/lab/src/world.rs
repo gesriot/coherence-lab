@@ -3,24 +3,25 @@ use crate::types::*;
 use jscompat::{hash_unit, sin};
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct World {
-    pub(crate) objects: Vec<Object>,
-    pub(crate) wall: Wall,
+#[non_exhaustive]
+pub struct World {
+    pub objects: Vec<Object>,
+    pub wall: Wall,
     pub(crate) seed: u32,
-    pub(crate) t: u32,
+    pub t: u32,
     pub(crate) light: f64,
     pub(crate) noise: f64,
     pub(crate) base_noise: f64,
     swap_at: Option<u32>,
     pub(crate) swapped: bool,
-    pub(crate) body_gain: Option<[f64; 2]>,
+    pub body_gain: Option<[f64; 2]>,
 }
-pub(crate) fn hidden(o: &Object, w: Wall) -> bool {
+pub fn hidden(o: &Object, w: Wall) -> bool {
     let dx = o.x - clamp(o.x, w.x, w.x + w.w);
     let dy = o.y - clamp(o.y, w.y, w.y + w.h);
     dx * dx + dy * dy <= o.r * o.r
 }
-pub(crate) fn contains(o: &Object, x: f64, y: f64) -> bool {
+pub fn contains(o: &Object, x: f64, y: f64) -> bool {
     let dx = x - o.x;
     let dy = y - o.y;
     match o.shape {
@@ -42,7 +43,7 @@ pub(crate) fn initial_gaze(sc: Scenario) -> Gaze {
         Scenario::Nursery => Gaze::new(50., 48., 30.),
     }
 }
-pub(crate) fn make_world(sc: Scenario, seed: u32) -> World {
+pub fn make_world(sc: Scenario, seed: u32) -> World {
     use Shape::*;
     let mut draw = 0;
     let mut jitter = || {
@@ -118,7 +119,7 @@ pub(crate) fn make_world(sc: Scenario, seed: u32) -> World {
         body_gain: None,
     }
 }
-pub(crate) fn advance(world: &mut World) {
+pub fn advance(world: &mut World) {
     world.t += 1;
     world.light = sin(f64::from(world.t) * 0.08) * 20.;
     for o in &mut world.objects {
@@ -143,7 +144,7 @@ pub(crate) fn advance(world: &mut World) {
     }
 }
 
-pub(crate) fn schedule_outdoor_losses(world: &mut World) {
+pub fn schedule_outdoor_losses(world: &mut World) {
     let mut preview = world.clone();
     let deadlines: Vec<_> = (0..world.objects.len())
         .map(|i| {

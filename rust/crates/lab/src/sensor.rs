@@ -8,7 +8,13 @@ pub(crate) struct Observation {
     pub(crate) cells: Vec<Cell>,
 }
 
-fn sample(world: &World, x: f64, y: f64, i: usize) -> Cell {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Occlusion {
+    WholeObject,
+    PerCell,
+}
+
+pub fn sample(world: &World, x: f64, y: f64, i: usize, occlusion: Occlusion) -> Cell {
     if (0.0..=100.).contains(&x) && (0.0..=100.).contains(&y) {
         let w = world.wall;
         if x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h {
@@ -22,7 +28,10 @@ fn sample(world: &World, x: f64, y: f64, i: usize) -> Cell {
             };
         }
         for o in world.objects.iter().rev() {
-            if o.vanish_at.is_some_and(|t| world.t >= t) || hidden(o, w) || !contains(o, x, y) {
+            if o.vanish_at.is_some_and(|t| world.t >= t)
+                || (occlusion == Occlusion::WholeObject && hidden(o, w))
+                || !contains(o, x, y)
+            {
                 continue;
             }
             return Cell {
@@ -60,6 +69,7 @@ pub(crate) fn observe(world: &World, gaze: Gaze, estimate: Option<[f64; 2]>) -> 
                 left + ((i % grid) as f64 + 0.5) * size,
                 top + ((i / grid) as f64 + 0.5) * size,
                 i,
+                Occlusion::WholeObject,
             )
         })
         .collect();

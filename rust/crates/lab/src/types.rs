@@ -129,33 +129,36 @@ pub(crate) struct Gaze {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy, Default)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Cell {
-    pub(crate) hue: f64,
-    pub(crate) saturation: f64,
-    pub(crate) lightness: f64,
+#[non_exhaustive]
+pub struct Cell {
+    pub hue: f64,
+    pub saturation: f64,
+    pub lightness: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Wall {
-    pub(crate) x: f64,
-    pub(crate) y: f64,
-    pub(crate) w: f64,
-    pub(crate) h: f64,
+#[non_exhaustive]
+pub struct Wall {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Object {
+#[non_exhaustive]
+pub struct Object {
     pub(crate) id: &'static str,
     pub(crate) shape: Shape,
     pub(crate) hue: f64,
-    pub(crate) x: f64,
-    pub(crate) y: f64,
-    pub(crate) vx: f64,
-    pub(crate) vy: f64,
-    pub(crate) r: f64,
-    pub(crate) vanish_at: Option<u32>,
+    pub x: f64,
+    pub y: f64,
+    pub vx: f64,
+    pub vy: f64,
+    pub r: f64,
+    pub vanish_at: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy)]

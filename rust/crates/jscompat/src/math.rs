@@ -143,3 +143,8 @@ pub fn hue_noise(seed: f64, t: f64, i: f64) -> f64 {
     let w = hash_unit(seed * 7. + t * 53. + i * 17. + 29.);
     (u + v + w) / 1.5 - 1.
 }
+
+// The reference runtime enables --use-std-math-pow. Adam uses integer exponents.
+pub fn pow_u32(x: f64, exponent: u32) -> f64 {
+    x.powf(f64::from(exponent))
+}

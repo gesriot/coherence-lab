@@ -36,3 +36,7 @@ pub use genesis::{
     average, bootstrap, effect, replacement, score_interval, training_trace, trial,
 };
 pub use training::{Condition, PARTICIPANTS};
+
+pub use sensor::{Occlusion, sample};
+pub use types::{Cell, Object, Wall};
+pub use world::{World, advance, contains, hidden, make_world, schedule_outdoor_losses};
