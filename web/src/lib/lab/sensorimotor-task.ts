@@ -15,6 +15,7 @@ export const sensorimotorTask = {
   tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
   comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 },
   // Smallest rate tied for the highest final oracle accuracy on the design runs.
+  oracleTieTolerance: 0.005,
   oracleRate: 0.003,
 } as const;
 

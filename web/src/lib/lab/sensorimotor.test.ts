@@ -88,7 +88,7 @@ test("only oracle updates request a label and gain training preserves the first-
   }
 });
 
-import { designGainControls } from "./sensorimotor-feasibility.ts";
+import { designGainControls, designOracleRate } from "./sensorimotor-feasibility.ts";
 
 test("the sensorimotor design runner rejects participant conditions before running controls", () => {
   for (const id of ["full", "first-order", "no-protocol", "strong-first-order", "keep-all", "constructor"]) {
@@ -106,7 +106,7 @@ test("the sensorimotor design, oracle rate and reserved seeds are frozen", () =>
     checkpoints: [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120], rates: [0.003, 0.01, 0.03, 0.1], evaluationCount: 20,
     design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
     tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
-    comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleRate: 0.003,
+    comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleTieTolerance: 0.005, oracleRate: 0.003,
   });
 });
 
@@ -169,4 +169,14 @@ test("calibration checkpoints capture completed environment steps across episode
       if (point) assert.deepEqual([point.gainX, point.gainY], models.gain);
     }
   }
+});
+
+test("oracle rate ties are measured against the highest unrounded final progress", () => {
+  assert.equal(designOracleRate([
+    { rate: 0.1, finalQ: 1 }, { rate: 0.03, finalQ: 0.999 }, { rate: 0.003, finalQ: 0.993 },
+    { rate: 0.01, finalQ: 0.996 },
+  ]), 0.01);
+  assert.equal(designOracleRate([
+    { rate: 0.003, finalQ: 0 }, { rate: 0.01, finalQ: 0.005 },
+  ]), 0.01);
 });

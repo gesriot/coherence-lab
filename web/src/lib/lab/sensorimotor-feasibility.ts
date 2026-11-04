@@ -22,6 +22,12 @@ export function gainControlsPass(frozen: ControlSummary, ideal: ControlSummary, 
       && stableOracle(o.curve.map((p) => p.q)) && o.accuracy >= genesisTask.controlFloor);
 }
 
+export function designOracleRate(scores: { rate: number; finalQ: number }[]): number {
+  const maximum = Math.max(...scores.map((s) => s.finalQ));
+  const tied = scores.filter((s) => maximum - s.finalQ < sensorimotorTask.oracleTieTolerance);
+  return Math.min(...tied.map((s) => s.rate));
+}
+
 export function designGainControls(requested: readonly string[] = gainControls) {
   const ids = new Set(requested.map(requireGainControl));
   return [...ids].flatMap((id) => (id === "oracle" ? [...sensorimotorTask.rates] : [0]).map((rate) => ({

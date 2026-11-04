@@ -1,7 +1,7 @@
 import { decimal } from "./bench.ts";
 import { controlNames, stableOracle } from "./feasibility.ts";
 import { genesisTask } from "./genesis-task.ts";
-import { designGainControls, gainControlsPass } from "./sensorimotor-feasibility.ts";
+import { designGainControls, designOracleRate, gainControlsPass } from "./sensorimotor-feasibility.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
 
 const args = process.argv.slice(2);
@@ -23,6 +23,10 @@ const oracles = results.filter((r) => r.id === "oracle");
 if (frozen && ideal && oracles.length === sensorimotorTask.rates.length) {
   const ready = gainControlsPass(frozen, ideal, oracles);
   console.log(ready ? "Критерий готовности пройден." : "Критерий готовности не пройден.");
+  if (ready) {
+    const rate = designOracleRate(oracles.map((o) => ({ rate: o.rate, finalQ: o.curve.at(-1)!.q })));
+    console.log(`Собственный шаг оракула по итоговому q: ${decimal(rate)}`);
+  }
   const saturated = oracles.every((o) => o.curve[1]!.q >= genesisTask.controlFloor);
   console.log(saturated ? "Насыщение в первой точке обучения при всех шагах." : "Насыщения при всех шагах в первой точке обучения нет.");
 }
