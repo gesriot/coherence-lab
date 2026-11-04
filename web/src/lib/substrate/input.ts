@@ -69,7 +69,7 @@ export interface MotionInput { frame: Float64Array; copy: Command }
 
 // The world is live only until the generator advances. The evaluator alone reads it.
 export function* movingScene(scenario: ScenarioId, seed: number, steps: number, settings: MotionSettings) {
-  const world = substrateWorld(scenario, seed);
+  const world = substrateWorld(scenario, seed, { path: settings.path });
   world.bodyGain = [1, 1]; // Enables the fixed background texture in the point sensor.
   const path = gazePath(seed, settings.gain);
   const alternate = settings.copy === "shuffled" ? gazePath(seed + 7777, settings.gain) : undefined;

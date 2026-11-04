@@ -3,7 +3,11 @@ import { hashUnit } from "../lab/math.ts";
 export type Command = readonly [number, number];
 export type GainMode = "fixed" | "episodic";
 export type CopyMode = "executed" | "zero" | "shuffled";
-export interface MotionSettings { gain: GainMode; copy: CopyMode }
+export interface MotionSettings {
+  gain: GainMode;
+  copy: CopyMode;
+  path?: "scenario" | "random";
+}
 export interface Gaze { x: number; y: number }
 export const WINDOW_CELL = 3.125;
 

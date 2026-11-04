@@ -4,6 +4,7 @@ import { blankState, forward, stepBuffers, type Element } from "./element.ts";
 import { EVAL_STEPS, PROBE_SEEDS, TEST_SEEDS } from "./evaluation.ts";
 import { WINDOW_CELL, type Command, type Gaze, type MotionSettings } from "./gaze.ts";
 import { GRID, movingScene, type MotionInput } from "./input.ts";
+import { contextGroup, fitContext } from "./motion-context.ts";
 import { ridge, rSquared, shuffled } from "./probes.ts";
 import { inWall } from "./visibility.ts";
 
@@ -88,6 +89,7 @@ function collect(
   model: Element, initial: Element, settings: MotionSettings, seeds: readonly number[], totals?: Errors,
 ) {
   const rows = { model: [] as Float64Array[], initial: [] as Float64Array[], raw: [] as Float64Array[] };
+  const groups: string[] = [];
   const labels: Record<Target, number[]> = { own: [], world: [], apparent: [] };
   for (const seed of seeds) {
     for (const scenario of ["continuity", "vanish"] as const) {
@@ -102,6 +104,7 @@ function collect(
             const i = sample.cell * model.depth;
             rows.model.push(out.state.slice(i, i + model.depth));
             rows.initial.push(untrained.state.slice(i, i + model.depth));
+            groups.push(contextGroup(scenario, world.t));
             rows.raw.push(rawPatch(sample.cell, prev.input, input));
             for (const key of targets) labels[key].push(sample[key]);
           }
@@ -110,10 +113,10 @@ function collect(
       }
     }
   }
-  return { rows, labels };
+  return { rows, labels, groups };
 }
 
-export function evaluateMotion(
+function evaluateSamples(
   model: Element, initial: Element, settings: MotionSettings,
   trainSeeds: readonly number[] = PROBE_SEEDS, testSeeds: readonly number[] = TEST_SEEDS,
 ) {
@@ -133,6 +136,28 @@ export function evaluateMotion(
     probes[key] = { learned: score("model", y), initial: score("initial", y),
       raw: score("raw", y), shuffled: score("model", shuffled(y)) };
   }
-  return { ratios, probes, trainCount: train.labels.own.length, testCount: test.labels.own.length };
+  const scores = { ratios, probes, trainCount: train.labels.own.length, testCount: test.labels.own.length };
+  return { scores, train, test };
 }
+
+export function evaluateMotion(
+  model: Element, initial: Element, settings: MotionSettings,
+  trainSeeds?: readonly number[], testSeeds?: readonly number[],
+) {
+  return evaluateSamples(model, initial, settings, trainSeeds, testSeeds).scores;
+}
+
+export function evaluateMotionWithContext(
+  model: Element, initial: Element, settings: MotionSettings,
+  trainSeeds?: readonly number[], testSeeds?: readonly number[],
+) {
+  const { scores, train, test } = evaluateSamples(model, initial, settings, trainSeeds, testSeeds);
+  const context = {} as Record<Target, number>;
+  for (const key of targets) {
+    const predict = fitContext(train.groups, train.labels[key]);
+    context[key] = rSquared(test.labels[key], test.groups.map(predict));
+  }
+  return { ...scores, context };
+}
+
 export type MotionScores = ReturnType<typeof evaluateMotion>;
