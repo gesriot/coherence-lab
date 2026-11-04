@@ -6,6 +6,8 @@ export const sceneSignal = {
   ratios: [0.8, 0.85, 0.9, 0.95, 0.98, 0.99, 1, 1.01, 1.02, 1.05, 1.1, 1.15, 1.2],
   minCells: 20,
   minToMean: 0.5,
+  maxBiasFraction: 0.2,
+  minCorrectDirection: 0.8,
 } as const;
 
 export const sensorimotorTask = {
@@ -21,11 +23,11 @@ export const sensorimotorTask = {
   rates: [0.01, 0.03, 0.1, 0.3],
   evaluationCount: 20,
   design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
-  tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
-  comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 },
+  tuning: { firstRun: 541, runs: 10, firstEvalSeed: 2081 },
+  comparison: { firstRun: 121, runs: 30, firstEvalSeed: 1081 },
   oracleTieTolerance: 0.005,
   // Smallest rate within the tolerance of the best final q on runs 801–810.
-  oracleRate: 0.01,
+  oracleRate: 0.03,
 } as const;
 
 export function bodyForRun(seed: number): Vector {

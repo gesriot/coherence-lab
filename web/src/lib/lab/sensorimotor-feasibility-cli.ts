@@ -1,7 +1,7 @@
 import { decimal } from "./bench.ts";
 import { controlNames, stableOracle } from "./feasibility.ts";
 import { genesisTask } from "./genesis-task.ts";
-import { designGainControls, designOracleRate, fixedPointCheck, gainControlsPass } from "./sensorimotor-feasibility.ts";
+import { designGainControls, designOracleRate, fixedPointCheck, fixedPointPass, gainControlsPass } from "./sensorimotor-feasibility.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
 
 import { printFixedPoint } from "./sensorimotor-report.ts";
@@ -26,7 +26,7 @@ const oracles = results.filter((r) => r.id === "oracle");
 if (frozen && ideal && oracles.length === sensorimotorTask.rates.length) {
   const fixedPoint = fixedPointCheck(sensorimotorTask.design);
   printFixedPoint(fixedPoint);
-  const ready = fixedPoint.passed && gainControlsPass(frozen, ideal, oracles);
+  const ready = fixedPointPass(fixedPoint) && gainControlsPass(frozen, ideal, oracles);
   console.log(ready ? "Критерий готовности пройден." : "Критерий готовности не пройден.");
   if (ready) {
     const rate = designOracleRate(oracles.map((o) => ({ rate: o.rate, finalQ: o.curve.at(-1)!.q })));

@@ -47,15 +47,21 @@ export function gainTrial(id: GainCondition, seed: number, firstEvalSeed: number
   const learner = condition === "frozen" ? null : new GainLearner(models, rate, policy.selection, seed);
   if (id === "ideal") models.gain = [...body];
 
-  let step = 0, saccades = 0;
+  let step = 0, saccades = 0, informativePairs = 0, informativeDraws = 0;
   const curve = [calibrationPoint(step, models.gain, body, initialError)];
-  runGainEpisodes(condition, seed, body, models, learner, (shift) => {
+  runGainEpisodes(condition, seed, body, models, learner, (shift, observed, informativeDraw) => {
     step++;
+    if (observed[0] != null || observed[1] != null) informativePairs++;
+    if (informativeDraw) informativeDraws++;
     if (Math.hypot(...shift) > sensorimotorTask.saccadeDistance) saccades++;
     if (step === checkpoints[curve.length]) curve.push(calibrationPoint(step, models.gain, body, initialError));
   });
   const secondary = evaluate(models, policy.gaze, firstEvalSeed, evaluationCount, body);
-  return { curve, secondary, saccadesPerEpisode: saccades / gainTrainingEpisodes };
+  return {
+    curve, secondary, saccadesPerEpisode: saccades / gainTrainingEpisodes,
+    informativePairsPerEpisode: informativePairs / gainTrainingEpisodes,
+    informativeDrawsPerEpisode: informativeDraws / gainTrainingEpisodes,
+  };
 }
 
 export function gainRuns(id: GainCondition, rate: number, seeds: SeedRange) {
@@ -77,5 +83,7 @@ export function summarizeGainRuns(runs: GainRuns) {
   return {
     curve, accuracy, retention: mean(runs.map((r) => r.secondary.retention)),
     ghostFree: mean(runs.map((r) => r.secondary.ghostFree)), saccadesPerEpisode: mean(runs.map((r) => r.saccadesPerEpisode)),
+    informativePairsPerEpisode: mean(runs.map((r) => r.informativePairsPerEpisode)),
+    informativeDrawsPerEpisode: mean(runs.map((r) => r.informativeDrawsPerEpisode)),
   };
 }

@@ -1,7 +1,7 @@
 import { referenceModel, stableOracle } from "./feasibility.ts";
 import { genesisTask } from "./genesis-task.ts";
 import { summarizeGainRuns, gainRuns, runGainEpisodes, type SeedRange } from "./sensorimotor.ts";
-import { bodyForRun, sensorimotorTask } from "./sensorimotor-task.ts";
+import { bodyForRun, sceneSignal, sensorimotorTask } from "./sensorimotor-task.ts";
 
 export const gainControls = ["frozen", "ideal", "oracle", "neutral"] as const;
 type GainControl = typeof gainControls[number];
@@ -35,6 +35,12 @@ export function designGainControls(requested: readonly string[] = gainControls) 
   })));
 }
 
+export interface FixedPointScores { bias: number; biasLimit: number; direction: number }
+
+export function fixedPointPass(p: FixedPointScores): boolean {
+  return Math.abs(p.bias) <= p.biasLimit && p.direction >= sceneSignal.minCorrectDirection;
+}
+
 export function fixedPointCheck(seeds: SeedRange) {
   let biasSum = 0, informativeAxes = 0, correct = 0, directionalAxes = 0, offsetSum = 0;
   for (let i = 0; i < seeds.runs; i++) {
@@ -59,7 +65,6 @@ export function fixedPointCheck(seeds: SeedRange) {
     }
   }
   const bias = biasSum / informativeAxes, direction = correct / directionalAxes;
-  const biasLimit = 0.2 * offsetSum / (2 * seeds.runs);
-  return { bias, biasLimit, direction, correct, directionalAxes, informativeAxes,
-    passed: Math.abs(bias) <= biasLimit && direction >= 0.8 };
+  const biasLimit = sceneSignal.maxBiasFraction * offsetSum / (2 * seeds.runs);
+  return { bias, biasLimit, direction, correct, directionalAxes, informativeAxes };
 }

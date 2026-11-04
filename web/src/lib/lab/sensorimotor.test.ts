@@ -154,17 +154,22 @@ test("the sensorimotor design runner rejects participant conditions before runni
 });
 
 import { compareGainConditions, type ComparisonControls } from "./sensorimotor-comparison.ts";
-import { sensorimotorTask } from "./sensorimotor-task.ts";
+import { sceneSignal, sensorimotorTask } from "./sensorimotor-task.ts";
 import { calibrationError, calibrationPoint, gainArea, gainTrial, type GainRuns } from "./sensorimotor.ts";
 
 test("the sensorimotor design, oracle rate and reserved seeds are frozen", () => {
+  assert.deepEqual(sceneSignal, {
+    texture: { base: 6, amplitude: 4, xFrequency: 0.37, xPhase: 1.3, yFrequency: 0.29, yPhase: 0.7 },
+    ratios: [0.8, 0.85, 0.9, 0.95, 0.98, 0.99, 1, 1.01, 1.02, 1.05, 1.1, 1.15, 1.2],
+    minCells: 20, minToMean: 0.5, maxBiasFraction: 0.2, minCorrectDirection: 0.8,
+  });
   assert.deepEqual(sensorimotorTask, {
     bodyMinOffset: 0.1, bodyMaxOffset: 0.2, minGain: 0.5, maxGain: 2, memory: 256,
     metric: { baselineGain: [1, 1], firstScoredIndex: 1 }, saccadeDistance: 4,
     checkpoints: [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120], rates: [0.01, 0.03, 0.1, 0.3], evaluationCount: 20,
     design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
-    tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
-    comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleTieTolerance: 0.005, oracleRate: 0.01,
+    tuning: { firstRun: 541, runs: 10, firstEvalSeed: 2081 },
+    comparison: { firstRun: 121, runs: 30, firstEvalSeed: 1081 }, oracleTieTolerance: 0.005, oracleRate: 0.03,
   });
 });
 
@@ -172,26 +177,31 @@ test("no participant or verdict is produced if a sensorimotor control fails", ()
   const synthetic = (scores: number[], accuracy = 1): GainRuns => [{
     curve: scores.map((q, i) => ({ step: sensorimotorTask.checkpoints[i]!, q, error: 0, gainX: 1, gainY: 1 })),
     secondary: { accuracy, retention: accuracy, ghostFree: accuracy, untracked: 0, motionError: 0, hidden: 0.001, open: 0.02, miss: 0.1 },
-    saccadesPerEpisode: 0,
+    saccadesPerEpisode: 0, informativePairsPerEpisode: 0, informativeDrawsPerEpisode: 0,
   }];
   const zeros = sensorimotorTask.checkpoints.map((): number => 0);
   const ones = zeros.map(() => 1);
   const stable = [0, 0.9, 0.85, ...ones.slice(3)];
   const good = synthetic(stable);
   const valid = { frozen: synthetic(zeros, 0.75), ideal: synthetic(ones), oracle: good, participantOracle: good };
+  const fixedPoint = { bias: -0.03, biasLimit: 0.03, direction: 0.8 };
+  for (const invalid of [{ ...fixedPoint, bias: -0.031 }, { ...fixedPoint, direction: 0.799 },
+    { ...fixedPoint, direction: NaN }, { ...fixedPoint, bias: NaN }]) {
+    assert.equal(compareGainConditions(valid, invalid, () => assert.fail("gate opened")), null);
+  }
   for (const [key, invalid] of [
     ["frozen", synthetic([0.01, ...zeros.slice(1)], 0.75)], ["frozen", synthetic(zeros, 0.775)],
     ["ideal", synthetic([0.99, ...ones.slice(1)])], ["ideal", synthetic(ones, 0.875)],
     ["oracle", synthetic([0, 0.90, 0.84, ...ones.slice(3)])], ["oracle", synthetic(stable, 0.875)],
     ["participantOracle", synthetic([...stable.slice(0, -1), 0.899])], ["participantOracle", synthetic(stable, 0.875)],
   ] satisfies [keyof ComparisonControls, GainRuns][]) {
-    assert.equal(compareGainConditions({ ...valid, [key]: invalid }, () => assert.fail("gate opened")), null);
+    assert.equal(compareGainConditions({ ...valid, [key]: invalid }, fixedPoint, () => assert.fail("gate opened")), null);
   }
-  const result = compareGainConditions(valid, () => good)!;
+  const result = compareGainConditions(valid, fixedPoint, () => good)!;
   assert.equal(result.participants.size, 4);
   assert.deepEqual(result.differences.map((d) => d.estimate.mean), [0, 0, 0]);
   assert.match(result.verdicts[2]!, /не применимо/);
-  const precise = compareGainConditions(valid, (id) =>
+  const precise = compareGainConditions(valid, fixedPoint, (id) =>
     synthetic([0, ...Array(10).fill(id === "full" ? 0.600123 : 0.5)]))!;
   assert.ok(Math.abs(precise.differences[0]!.estimate.mean - 0.100123) < 1e-12);
   assert.equal(precise.differences[0]!.effect, "faster");

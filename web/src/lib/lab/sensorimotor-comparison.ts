@@ -1,13 +1,14 @@
 import { bootstrap, effect, replacementVerdict } from "./genesis.ts";
 import { genesisTask } from "./genesis-task.ts";
-import { gainControlsPass } from "./sensorimotor-feasibility.ts";
+import { fixedPointPass, gainControlsPass, type FixedPointScores } from "./sensorimotor-feasibility.ts";
 import { gainArea, summarizeGainRuns, type GainRuns } from "./sensorimotor.ts";
 
 const alternatives = ["first-order", "no-protocol", "strong-first-order"] as const;
 type Participant = "full" | typeof alternatives[number];
 export type ComparisonControls = Record<"frozen" | "ideal" | "oracle" | "participantOracle", GainRuns>;
 
-export function compareGainConditions(controls: ComparisonControls, measure: (id: Participant) => GainRuns) {
+export function compareGainConditions(controls: ComparisonControls, fixedPoint: FixedPointScores, measure: (id: Participant) => GainRuns) {
+  if (!fixedPointPass(fixedPoint)) return null;
   if (!gainControlsPass(summarizeGainRuns(controls.frozen), summarizeGainRuns(controls.ideal),
     [summarizeGainRuns(controls.oracle), summarizeGainRuns(controls.participantOracle)])) return null;
 

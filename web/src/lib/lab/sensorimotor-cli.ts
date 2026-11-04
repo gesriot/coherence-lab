@@ -3,13 +3,16 @@ import { controlNames, stableOracle } from "./feasibility.ts";
 import { bootstrap, scoreInterval, type Estimate } from "./genesis.ts";
 import { conditions } from "./genesis-training.ts";
 import { compareGainConditions } from "./sensorimotor-comparison.ts";
+import { fixedPointCheck } from "./sensorimotor-feasibility.ts";
+import { printFixedPoint } from "./sensorimotor-report.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
 import { summarizeGainRuns, gainRuns, type GainRuns } from "./sensorimotor.ts";
 
 const { comparison, evaluationCount, oracleRate } = sensorimotorTask;
-// Highest mean calibration area on first-order runs 531–540, with final evaluation on seeds 2061–2080.
+// Previous signal rate, pending first-order tuning on the frozen scene alignment task.
 const selected: number = 0.003;
 const args = process.argv.slice(2);
+if (!sensorimotorTask.rates.some((rate) => rate === selected)) throw new Error("Сначала зафиксируйте выбранный шаг усиления.");
 if (args.length > 1 || (args.length === 1 && Number(args[0]!.replace(",", ".")) !== selected)) {
   throw new Error(`Для сравнения зафиксирован шаг ${decimal(selected)}.`);
 }
@@ -23,11 +26,14 @@ function printCurve(label: string, runs: GainRuns) {
   })));
   const accuracy = scoreInterval(runs.map((r) => r.secondary.accuracy), 2 * evaluationCount);
   console.log(`Итоговая точность ${interval(accuracy)} · удержание A ${decimal(summary.retention)} · без призрака ${decimal(summary.ghostFree)}`);
+  console.log(`Информативных пар на эпизод: ${decimal(summary.informativePairsPerEpisode)} · информативных выборок из памяти: ${decimal(summary.informativeDrawsPerEpisode)}`);
   console.log(`Саккад на эпизод: ${decimal(summary.saccadesPerEpisode)}`);
 }
 
 const { firstRun, runs, firstEvalSeed } = comparison;
 console.log(`Прогоны ${firstRun}–${firstRun + runs - 1} · оценочные зёрна ${firstEvalSeed}–${firstEvalSeed + evaluationCount - 1}`);
+const fixedPoint = fixedPointCheck(comparison);
+printFixedPoint(fixedPoint);
 const oracle = gainRuns("oracle", oracleRate, comparison);
 const controls = {
   frozen: gainRuns("frozen", 0, comparison), ideal: gainRuns("ideal", 0, comparison), oracle,
@@ -41,9 +47,9 @@ for (const [label, rate, curve] of [
   printCurve(`${label} · η усиления ${decimal(rate)}`, curve);
   console.log(stableOracle(summarizeGainRuns(curve).curve.map((p) => p.q)) ? "Кривая устойчива." : "Кривая неустойчива.");
 }
-const result = compareGainConditions(controls, (id) => gainRuns(id, selected, comparison));
+const result = compareGainConditions(controls, fixedPoint, (id) => gainRuns(id, selected, comparison));
 if (result) {
-  console.log("Допуск по калибровке и итоговой точности пройден.");
+  console.log("Допуск по собственному сигналу, калибровке и итоговой точности пройден.");
   for (const [id, curve] of result.participants) printCurve(conditions[id].label, curve);
   console.log(result.saturated ? "Обучение слишком быстрое: задача не различает условия." : "Насыщения в точке 10 шагов нет.");
   for (const { id, estimate } of result.differences) {
