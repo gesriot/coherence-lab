@@ -9,3 +9,10 @@ cc = "1"
 
 [dev-dependencies]
 anyhow.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+ryu-js = "=1.0.3"
+unicode-normalization = "0.1.25"
+regex = { version = "1", default-features = false, features = ["std"] }
+num-bigint = "0.4"
