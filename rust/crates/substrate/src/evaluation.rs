@@ -7,13 +7,6 @@ use crate::{
 use jscompat::{abs, floor, hypot, sign};
 use lab::{Object, Occlusion, Scenario, World, advance, contains, hidden};
 pub(crate) const OFFSETS: [i32; 9] = [-6, -5, -4, -3, -2, -1, 0, 1, 2];
-pub(crate) const EVAL_STEPS: usize = 72;
-pub(crate) fn held_out() -> Vec<u32> {
-    (3001..3031).collect()
-}
-pub(crate) fn probe_seeds() -> Vec<u32> {
-    (4001..4031).collect()
-}
 pub(crate) struct Predictor<'a> {
     m: &'a Element,
     prev: Vec<f64>,
@@ -69,6 +62,7 @@ struct Totals {
     all: Ratio,
     changed: Ratio,
     exit: Ratio,
+    exit_cells: usize,
     wall: Ratio,
     events: usize,
     wall_events: usize,
@@ -113,6 +107,7 @@ struct Replay<'a> {
     m: Option<&'a Element>,
     grid: usize,
     occ: Occlusion,
+    steps: usize,
 }
 impl Replay<'_> {
     fn episode(
@@ -134,7 +129,7 @@ impl Replay<'_> {
         let mut last_seen: Option<Object> = None;
         let mut age = -1;
         let mut crossed = false;
-        for t in 0..=EVAL_STEPS {
+        for t in 0..=self.steps {
             let x = frame(&w, grid, self.occ, None);
             let a = &w.objects[0];
             let alive = a.vanish_at.is_none_or(|at| w.t < at);
@@ -187,6 +182,7 @@ impl Replay<'_> {
                         }
                     {
                         v.exit.add(squared, copy);
+                        v.exit_cells += 1;
                         if crossed {
                             v.wall.add(squared, copy);
                         }
@@ -221,12 +217,12 @@ impl Replay<'_> {
                         }
                     }
                 }
-                if totals.is_some() && t < EVAL_STEPS {
+                if totals.is_some() && t < self.steps {
                     predictions.push(out.prediction.clone());
                 }
                 &out.state
             } else {
-                if totals.is_some() && t < EVAL_STEPS {
+                if totals.is_some() && t < self.steps {
                     predictions.push(x.clone());
                 }
                 &x
@@ -258,7 +254,7 @@ impl Replay<'_> {
             }
             was_hidden = invisible;
             prev = x;
-            if t < EVAL_STEPS {
+            if t < self.steps {
                 advance(&mut w);
             }
         }
@@ -283,13 +279,19 @@ pub(crate) fn evaluate(
     m: Option<&Element>,
     grid: usize,
     occ: Occlusion,
+    steps: usize,
     training: &[u32],
     test: &[u32],
 ) -> Result<Scores, Error> {
     if training.iter().any(|s| test.contains(s)) {
         return Err(Error::SeedOverlap);
     }
-    let replay = Replay { m, grid, occ };
+    let replay = Replay {
+        m,
+        grid,
+        occ,
+        steps,
+    };
     let (mut tr, mut te): ([Rows; 3], [Rows; 3]) = Default::default();
     let mut v = Totals::default();
     for &s in training {
@@ -300,7 +302,9 @@ pub(crate) fn evaluate(
             replay.episode(sc, s, &mut te, Some(&mut v))?;
         }
     }
-    if [v.all, v.changed, v.exit].iter().any(|r| r.copy == 0.) {
+    // Coarse sensors may have no cell on the first exposed frame. The
+    // empty exit ratio remains NaN, while the other metrics are measurable.
+    if v.all.copy == 0. || v.changed.copy == 0. || (v.exit_cells > 0 && v.exit.copy == 0.) {
         return Err(Error::NoBaseline);
     }
     let mut probes = [[0.; 2]; 3];
@@ -332,6 +336,7 @@ mod tests {
             None,
             16,
             Occlusion::WholeObject,
+            72,
             &[4111, 4112],
             &[3111, 3112],
         )?;
@@ -360,10 +365,10 @@ mod tests {
             };
             let before = trajectory()?;
             assert!(matches!(
-                evaluate(Some(&m), 16, occ, &[8101], &[8101]),
+                evaluate(Some(&m), 16, occ, 72, &[8101], &[8101]),
                 Err(Error::SeedOverlap)
             ));
-            let s = evaluate(Some(&m), 16, occ, &[8201, 8202], &[8101, 8102])?;
+            let s = evaluate(Some(&m), 16, occ, 72, &[8201, 8202], &[8101, 8102])?;
             assert!(s.probes.iter().flatten().all(|x| x.is_finite()));
             if kind == Kind::Hinted {
                 assert!(s.hint.iter().all(|x| x.is_finite()));

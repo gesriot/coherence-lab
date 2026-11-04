@@ -269,7 +269,7 @@ fn movies_commands_weights_and_scores_reproduce_the_reference_digests() -> Resul
         let pre = trajectory()?;
         for random in [true, false] {
             assert!(matches!(
-                evaluate(&m, &initial, Motion { random, ..mo }, &[7, 8], &[8, 9]),
+                evaluate(&m, &initial, Motion { random, ..mo }, 72, &[7, 8], &[8, 9]),
                 Err(Error::SeedOverlap)
             ));
         }
@@ -277,6 +277,7 @@ fn movies_commands_weights_and_scores_reproduce_the_reference_digests() -> Resul
             &m,
             &initial,
             mo,
+            72,
             &[8001, 8002, 8003, 8004],
             &[8101, 8102, 8103, 8104],
         )?;

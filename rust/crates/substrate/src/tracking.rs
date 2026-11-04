@@ -1,7 +1,7 @@
 use crate::{
     Error, Scale,
     element::{Element, Kind},
-    evaluation::{Average, EVAL_STEPS, OFFSETS, Predictor, Ratio, held_out, near, saturation},
+    evaluation::{Average, OFFSETS, Predictor, Ratio, near, saturation},
     experiment::{TrainingOptions, train},
     input::{Detector, Event, WorldSettings, center, frame, world},
     persistence::offsets,
@@ -17,7 +17,7 @@ struct Episode {
     events: Vec<Event>,
     ghost: Vec<Vec<usize>>,
 }
-fn episodes(setting: WorldSettings, grid: usize, seeds: &[u32]) -> Vec<Episode> {
+fn episodes(setting: WorldSettings, grid: usize, steps: usize, seeds: &[u32]) -> Vec<Episode> {
     let mut all = Vec::new();
     for &seed in seeds {
         for sc in [Scenario::Continuity, Scenario::Vanish] {
@@ -29,7 +29,7 @@ fn episodes(setting: WorldSettings, grid: usize, seeds: &[u32]) -> Vec<Episode> 
                 events: vec![],
                 ghost: vec![],
             };
-            for t in 0..=EVAL_STEPS {
+            for t in 0..=steps {
                 let (e, visible) = det.read(&w, grid);
                 if let Some(e) = e {
                     ep.events.push(e);
@@ -52,7 +52,7 @@ fn episodes(setting: WorldSettings, grid: usize, seeds: &[u32]) -> Vec<Episode> 
                     vec![]
                 };
                 ep.ghost.push(cells);
-                if t < EVAL_STEPS {
+                if t < steps {
                     advance(&mut w);
                 }
             }
@@ -300,7 +300,12 @@ pub fn b1b(s: TrackingSettings, progress: impl Fn(&str) + Sync) -> Result<String
             columns: Some(j.columns),
             random: true,
         };
-        let held = episodes(ws, s.scale.grid, &held_out());
+        let held = episodes(
+            ws,
+            s.scale.grid,
+            s.scale.evaluation.steps,
+            &s.scale.evaluation.test_seeds(),
+        );
         let mut formation = vec![];
         let mut last = None;
         let mut m = Element::new(
@@ -368,7 +373,13 @@ pub fn b1b(s: TrackingSettings, progress: impl Fn(&str) + Sync) -> Result<String
         jobs.len(),
         s.scale.depth
     );
-    out += "Проверочные зёрна 3001–3030. Ошибки относительно копии, призрак – абсолютная ошибка.\nСтена · условие · прогон\tВсе\tМеняющиеся\tПризрак\tВыход\tПропуск\tДругие строки\tПосле ухода\tВыходы (кадры)\tПропуски (кадры)\n";
+    writeln!(
+        out,
+        "Проверочные зёрна {}. Ошибки относительно копии, призрак – абсолютная ошибка.",
+        s.scale.evaluation.test_range()
+    )
+    .expect("writing to String is infallible");
+    out += "Стена · условие · прогон\tВсе\tМеняющиеся\tПризрак\tВыход\tПропуск\tДругие строки\tПосле ухода\tВыходы (кадры)\tПропуски (кадры)\n";
     for (label, g) in &groups {
         let mean = averages(
             &g.iter()
@@ -386,9 +397,10 @@ pub fn b1b(s: TrackingSettings, progress: impl Fn(&str) + Sync) -> Result<String
             wall.text(),
             gap.text()
         )
-        .expect("write to string");
+        .expect("writing to String is infallible");
     }
-    writeln!(out, "\nОжидание / шаг от выхода\t{}", offsets()).expect("write to string");
+    writeln!(out, "\nОжидание / шаг от выхода\t{}", offsets())
+        .expect("writing to String is infallible");
     for (label, g) in &groups {
         line(
             &mut out,
@@ -423,7 +435,7 @@ pub fn b1b(s: TrackingSettings, progress: impl Fn(&str) + Sync) -> Result<String
             .collect();
         let (v, pass) = criterion(&base, &ctrl, s.scale.runs);
         let [exit, worst, other, after, base] = v.map(fmt);
-        writeln!(out,"Стена {w} · выход ×50 {exit} (≤ 0,50), худший {worst} (≤ 0,65), другие строки {other} (≤ 0,03), после ухода {after} (≤ 0,08), база {base} (≥ 0,90).").expect("write to string");
+        writeln!(out,"Стена {w} · выход ×50 {exit} (≤ 0,50), худший {worst} (≤ 0,65), другие строки {other} (≤ 0,03), после ухода {after} (≤ 0,08), база {base} (≥ 0,90).").expect("writing to String is infallible");
         writeln!(
             out,
             "Стена {w} · критерий «слежение выполнимо» {}.",
@@ -433,14 +445,14 @@ pub fn b1b(s: TrackingSettings, progress: impl Fn(&str) + Sync) -> Result<String
                 "не выполнен"
             }
         )
-        .expect("write to string");
+        .expect("writing to String is infallible");
     }
     writeln!(
         out,
         "Стена 4 · описательное условие без порога.\nВремя полного запуска: {} с.",
         seconds(start)
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     Ok(out)
 }
 

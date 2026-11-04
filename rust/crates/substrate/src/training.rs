@@ -2,7 +2,7 @@ use crate::{
     Error,
     element::{Element, Kind, Step},
     gradient::Gradient,
-    input::Observation,
+    signals::Observation,
 };
 use jscompat::{max, pow_u32, sqrt};
 struct Adam {

@@ -1,7 +1,7 @@
 use crate::{
     Error, Scale,
     element::{Element, Kind},
-    evaluation::{OFFSETS, Scores, evaluate, held_out, probe_seeds},
+    evaluation::{OFFSETS, Scores, evaluate},
     experiment::{TrainingOptions, train},
     probes::mean,
     report::{averages, fmt, line, pool, seconds},
@@ -132,7 +132,16 @@ fn run_job(
             seconds(start)
         ));
     }
-    let eval = |m: &Element| evaluate(Some(m), s.scale.grid, occ, &probe_seeds(), &held_out());
+    let eval = |m: &Element| {
+        evaluate(
+            Some(m),
+            s.scale.grid,
+            occ,
+            s.scale.evaluation.steps,
+            &s.scale.evaluation.probe_seeds(),
+            &s.scale.evaluation.test_seeds(),
+        )
+    };
     Ok(ResultRow {
         family: job.family,
         run: job.run,
@@ -168,8 +177,9 @@ pub fn b0(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
         None,
         s.scale.grid,
         Occlusion::WholeObject,
-        &probe_seeds(),
-        &held_out(),
+        s.scale.evaluation.steps,
+        &s.scale.evaluation.probe_seeds(),
+        &s.scale.evaluation.test_seeds(),
     )?;
     let main: Vec<_> = rows
         .iter()
@@ -185,7 +195,7 @@ pub fn b0(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
     out += "Ошибки – доли ошибки копии; «Призрак» – средняя абсолютная ошибка по каналам.\nУ копии зонд читает три канала текущего кадра.\n";
     for curve in [false, true] {
         if curve {
-            writeln!(out,"\nСредняя предсказанная насыщенность в клетках выхода\nУсловие / шаг от выхода\t{}",offsets()).expect("write to string");
+            writeln!(out,"\nСредняя предсказанная насыщенность в клетках выхода\nУсловие / шаг от выхода\t{}",offsets()).expect("writing to String is infallible");
         } else {
             out += "Условие\tВсе клетки\tМеняющиеся\tВыход\tПризрак\tЗнак скорости\tСкрытый x (R²)\tПеремешано (R²)\n";
         }
@@ -231,7 +241,7 @@ pub fn b0(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
             .map(|s| s.changed)
             .fold(f64::NEG_INFINITY, jscompat::max))
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     writeln!(
         out,
         "Без обучения: минимум {} (≥ 1,0).",
@@ -240,13 +250,13 @@ pub fn b0(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
             .map(|s| s.changed)
             .fold(f64::INFINITY, jscompat::min))
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     writeln!(
         out,
         "Зонд знака скорости: среднее {} (≥ 0,75).",
         fmt(mean(main.iter().map(|s| s.probes[0][0])))
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     writeln!(
         out,
         "Жизнеспособность B0: {}.\nДля метрик постоянства порог не задан.",
@@ -256,7 +266,7 @@ pub fn b0(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
             "не подтверждена"
         }
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     let last = rows
         .iter()
         .map(|r| r.trained)
@@ -268,7 +278,7 @@ pub fn b0(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
         jscompat::to_fixed((last - start).as_secs_f64(), 1).expect("one decimal place"),
         seconds(start)
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     Ok(out)
 }
 pub(crate) fn offsets() -> String {
@@ -308,16 +318,23 @@ pub fn b1(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
         None,
         s.scale.grid,
         Occlusion::PerCell,
-        &probe_seeds(),
-        &held_out(),
+        s.scale.evaluation.steps,
+        &s.scale.evaluation.probe_seeds(),
+        &s.scale.evaluation.test_seeds(),
     )?;
-    out += "Оценка: 3001–3030; обучение зондов: 4001–4030. Ошибки относительно копии; призрак – абсолютная ошибка.\n";
+    writeln!(
+        out,
+        "Оценка: {}; обучение зондов: {}. Ошибки относительно копии; призрак – абсолютная ошибка.",
+        s.scale.evaluation.test_range(),
+        s.scale.evaluation.probe_range()
+    )
+    .expect("writing to String is infallible");
     writeln!(
         out,
         "Возврат видимости: {} событий; в {} из них A касался стены во время скрытия.",
         raw.events, raw.wall_events
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     for table in 0..5 {
         let title = match table {
             0 => {
@@ -333,7 +350,7 @@ pub fn b1(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
                 ][table - 2]
             ),
         };
-        writeln!(out, "\n{title}").expect("write to string");
+        writeln!(out, "\n{title}").expect("writing to String is infallible");
         let values = |s: &Scores, initial: &Scores| match table {
             0 => vec![s.all, s.changed, s.exit, s.ghost, s.wall],
             1 => s.curve.to_vec(),
@@ -405,14 +422,14 @@ pub fn b1(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
         fmt(exit),
         fmt(worst)
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     writeln!(
         out,
         "Ожидание в точке 0: {} (≥ 0,03), среднее в −6…−4: {} (требуется рост).",
         fmt(at),
         fmt(before)
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     writeln!(
         out,
         "Критерий частичного постоянства: {}.\nВремя полного запуска: {} с.",
@@ -423,7 +440,7 @@ pub fn b1(s: PersistenceSettings, progress: impl Fn(&str) + Sync) -> Result<Stri
         },
         seconds(start)
     )
-    .expect("write to string");
+    .expect("writing to String is infallible");
     Ok(out)
 }
 #[cfg(test)]

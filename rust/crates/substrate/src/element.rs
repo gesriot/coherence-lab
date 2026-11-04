@@ -1,4 +1,4 @@
-use crate::{Error, input::Vector, matrix::product};
+use crate::{Error, matrix::product, signals::Vector};
 use jscompat::{exp, hash_unit, tanh};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {

@@ -1,7 +1,7 @@
 use crate::{
     Error, Scale,
     element::{Element, Kind},
-    evaluation::{Average, EVAL_STEPS, Predictor, Ratio, held_out, probe_seeds},
+    evaluation::{Average, Predictor, Ratio},
     experiment::{TrainingOptions, train},
     input::{CopyMode, Gain, Motion, MovingScene, Observation, Vector, in_wall},
     probes::{Ridge, mean, r2, shuffled},
@@ -135,6 +135,7 @@ fn collect(
     m: &Element,
     initial: &Element,
     settings: Motion,
+    steps: usize,
     seeds: &[u32],
     mut totals: Option<&mut [Ratio; 5]>,
 ) -> Result<Samples, Error> {
@@ -144,7 +145,7 @@ fn collect(
             let mut scene = MovingScene::new(sc, seed, settings, m.grid);
             let (mut trained, mut fresh) = (Predictor::new(m), Predictor::new(initial));
             let mut previous: Option<Previous> = None;
-            for t in 0..=EVAL_STEPS {
+            for t in 0..=steps {
                 let (g, cmd, obs) = scene.read();
                 if let Some(p) = &previous
                     && let Some(v) = totals.as_deref_mut()
@@ -177,7 +178,7 @@ fn collect(
                     cmd,
                     position: [scene.world.objects[0].x, g[0]],
                 });
-                if t < EVAL_STEPS {
+                if t < steps {
                     advance(&mut scene.world);
                 }
             }
@@ -208,15 +209,16 @@ fn evaluate(
     m: &Element,
     initial: &Element,
     settings: Motion,
+    steps: usize,
     training: &[u32],
     test: &[u32],
 ) -> Result<MotionScore, Error> {
     if training.iter().any(|s| test.contains(s)) {
         return Err(Error::SeedOverlap);
     }
-    let tr = collect(m, initial, settings, training, None)?;
+    let tr = collect(m, initial, settings, steps, training, None)?;
     let mut totals = [Ratio::default(); 5];
-    let te = collect(m, initial, settings, test, Some(&mut totals))?;
+    let te = collect(m, initial, settings, steps, test, Some(&mut totals))?;
     let ridges = tr
         .rows
         .iter()
@@ -357,7 +359,14 @@ pub fn motion_experiment(
         Ok(Run {
             motion: mo,
             run,
-            s: evaluate(&m, &make(), mo, &probe_seeds(), &held_out())?,
+            s: evaluate(
+                &m,
+                &make(),
+                mo,
+                s.scale.evaluation.steps,
+                &s.scale.evaluation.probe_seeds(),
+                &s.scale.evaluation.test_seeds(),
+            )?,
         })
     })?;
     let mut out = format!(
@@ -372,7 +381,13 @@ pub fn motion_experiment(
         s.scale.grid,
         s.scale.grid
     );
-    out += "Проверка на зёрнах 3001–3030, обучение зондов на 4001–4030. Ошибки относительно копии кадра.\n";
+    writeln!(
+        out,
+        "Проверка на зёрнах {}, обучение зондов на {}. Ошибки относительно копии кадра.",
+        s.scale.evaluation.test_range(),
+        s.scale.evaluation.probe_range()
+    )
+    .expect("writing to String is infallible");
     let group = |gain, copy| {
         rows.iter()
             .filter(|r| r.motion.gain == gain && r.motion.copy == copy)
@@ -397,7 +412,7 @@ pub fn motion_experiment(
                 }
             )
         };
-        writeln!(out, "\n{title}").expect("write to string");
+        writeln!(out, "\n{title}").expect("writing to String is infallible");
         for &g in gains {
             for c in COPIES {
                 let name = format!("{} · {}", gain_name(g), copy_name(c));
@@ -443,8 +458,8 @@ pub fn motion_experiment(
             first.train,
             first.test
         )
-        .expect("write to string");
-        writeln!(out,"Копия / без копии {}, копия / перемешанная {} (порог ≤ 0,85); ниже обоих контролей в {wins} из {} прогонов.",fmt(vs_zero),fmt(vs_shuffle),s.scale.runs).expect("write to string");
+        .expect("writing to String is infallible");
+        writeln!(out,"Копия / без копии {}, копия / перемешанная {} (порог ≤ 0,85); ниже обоих контролей в {wins} из {} прогонов.",fmt(vs_zero),fmt(vs_shuffle),s.scale.runs).expect("writing to String is infallible");
         writeln!(
             out,
             "Критерий «копия команды используется» {}.",
@@ -454,7 +469,7 @@ pub fn motion_experiment(
                 "не выполнен"
             }
         )
-        .expect("write to string");
+        .expect("writing to String is infallible");
     }
     if s.random_path {
         out += "\nДвижение объекта в мире\tСредний прирост\tПрогонов выше трёх баз\tКритерий\n";
@@ -478,7 +493,7 @@ pub fn motion_experiment(
                     "не выполнен"
                 }
             )
-            .expect("write to string");
+            .expect("writing to String is infallible");
         }
         out += "\nПрогон\tРазность R² смещения A в мире: копия минус без копии\n";
         let mut differences = vec![];
@@ -488,11 +503,13 @@ pub fn motion_experiment(
         {
             let d = a.s.probes[1].learned - b.s.probes[1].learned;
             differences.push(d);
-            writeln!(out, "{}\t{}", a.run, fmt(d)).expect("write to string");
+            writeln!(out, "{}\t{}", a.run, fmt(d)).expect("writing to String is infallible");
         }
-        writeln!(out, "Среднее\t{}", fmt(mean(differences))).expect("write to string");
+        writeln!(out, "Среднее\t{}", fmt(mean(differences)))
+            .expect("writing to String is infallible");
     }
-    writeln!(out, "Время полного запуска: {} с.", seconds(start)).expect("write to string");
+    writeln!(out, "Время полного запуска: {} с.", seconds(start))
+        .expect("writing to String is infallible");
     Ok(out)
 }
 

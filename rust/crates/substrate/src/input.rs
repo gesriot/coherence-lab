@@ -31,7 +31,7 @@ pub(crate) fn world(s: Scenario, seed: u32, setting: WorldSettings) -> World {
     }
     w
 }
-pub(crate) type Vector = [f64; 2];
+pub(crate) use crate::signals::{Observation, Vector};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CopyMode {
     Executed,
@@ -116,10 +116,7 @@ pub(crate) fn frame(w: &World, grid: usize, occ: Occlusion, gaze: Option<Vector>
     }
     out
 }
-pub(crate) struct Observation {
-    pub(crate) x: Vec<f64>,
-    pub(crate) copy: Option<Vector>,
-}
+
 pub(crate) struct MovingScene {
     pub(crate) world: World,
     path: GazePath,
