@@ -1,13 +1,22 @@
 import type { Vector } from "./learning.ts";
+import { sceneSignal } from "./sensorimotor-task.ts";
 import { WORLD, hueNoise, wrapHue } from "./math.ts";
 import type { Cell, Observation, World } from "./types.ts";
 import { contains, hiddenByOccluder } from "./world.ts";
 
 const GRID = 12;
 
+function background(world: World, x: number, y: number): Cell {
+  const t = sceneSignal.texture;
+  const lightness = world.bodyGain
+    ? t.base + t.amplitude * Math.sin(t.xFrequency * x + t.xPhase) * Math.sin(t.yFrequency * y + t.yPhase)
+    : 6;
+  return { hue: 0, saturation: 0, lightness };
+}
+
 function sample(world: World, x: number, y: number, i: number): Cell {
   if (x < 0 || y < 0 || x > WORLD || y > WORLD) {
-    return { hue: 0, saturation: 0, lightness: 6 };
+    return background(world, x, y);
   }
   const occ = world.occluder;
   if (x >= occ.x && x <= occ.x + occ.w && y >= occ.y && y <= occ.y + occ.h) {
@@ -21,7 +30,7 @@ function sample(world: World, x: number, y: number, i: number): Cell {
     const hue = wrapHue(o.hue + world.light + hueNoise(world.seed, world.t, i) * world.noise);
     return { hue, saturation: 70, lightness: 50 };
   }
-  return { hue: 0, saturation: 0, lightness: 6 };
+  return background(world, x, y);
 }
 
 export function observe(

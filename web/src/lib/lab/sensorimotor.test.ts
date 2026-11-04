@@ -5,14 +5,15 @@ import { createEpisode, defaultConfig, snapshot, stepEpisode } from "./agent.ts"
 import { referenceModel } from "./feasibility.ts";
 import { conditions } from "./genesis-training.ts";
 import type { Vector } from "./learning.ts";
+import { alignScene, sceneFrame, type AxisRatios } from "./scene-alignment.ts";
 import { observe } from "./sensor.ts";
 import { bodyForRun, oracleGainLabel } from "./sensorimotor-task.ts";
 import { fitGain, GainLearner, trainGainEpisode, type TrainingCondition } from "./sensorimotor-training.ts";
 
-test("unit body and estimate reproduce every serialized reference frame", () => {
+test("episodes without a body reproduce every serialized reference frame", () => {
   const digest = createHash("sha256");
   for (const scenario of ["continuity", "vanish"] as const) {
-    const ep = createEpisode(scenario, 3101, "first-order", referenceModel("ideal"), [1, 1]);
+    const ep = createEpisode(scenario, 3101, "first-order", referenceModel("ideal"));
     for (let step = 0; step <= 80; step++) {
       if (step) stepEpisode(ep, { ...defaultConfig(), ablation: "first-order" });
       digest.update(JSON.stringify(snapshot(ep, "first-order")));
@@ -29,7 +30,7 @@ test("the sensor samples the physical window but reports the agent's intended ce
   for (let step = 0; step < 5; step++) {
     if (step) stepEpisode(ep, { ...defaultConfig(), ablation: "first-order" });
     const { x, y, aperture } = ep.agent.obsGaze;
-    const unitWorld = { ...ep.world, bodyGain: undefined };
+    const unitWorld = { ...ep.world, bodyGain: [1, 1] as Vector };
     const physical = observe(unitWorld, body[0] / models.gain[0] * x, body[1] / models.gain[1] * y, aperture);
     assert.deepEqual(ep.agent.cells, physical.cells);
     if (step === 0) {
@@ -39,35 +40,91 @@ test("the sensor samples the physical window but reports the agent's intended ce
   }
 });
 
-test("calibration converges from opposite sides without moving a stationary axis", () => {
-  const body: Vector = [0.85, 1.15], estimate: Vector = [1, 1], shift: Vector = [2, -3];
-  for (let i = 0; i < 1000; i++) fitGain(estimate, shift, oracleGainLabel(body, shift, estimate), 0.03);
-  assert.ok(Math.hypot(estimate[0] - body[0], estimate[1] - body[1]) < 1e-8);
-  fitGain(estimate, [2, 0], [-1e4, 1e4], 0.1);
-  assert.equal(estimate[0], 2);
-  assert.ok(Math.abs(estimate[1] - body[1]) < 1e-8);
-  fitGain(estimate, [2, 0], [1e4, 0], 0.1);
-  assert.equal(estimate[0], 0.5);
+function textureFrame(command: Vector, body: Vector, grid = 32) {
+  const cells = Array.from({ length: grid * grid }, (_, i) => {
+    const x = command[0] * body[0] + i % grid + 0.5 - grid / 2;
+    const y = command[1] * body[1] + Math.floor(i / grid) + 0.5 - grid / 2;
+    return { hue: 0, saturation: 0, lightness: 6 + 4 * Math.sin(0.37 * x + 1.3) * Math.sin(0.29 * y + 0.7) };
+  });
+  return sceneFrame(cells, grid, grid / 2, command);
+}
+
+test("static texture extends outside the world only for a body", () => {
+  const ep = createEpisode("continuity", 3101, "first-order", referenceModel("ideal"), [1, 1]);
+  for (const center of [-20, 120]) {
+    const frame = observe(ep.world, center, center, 6);
+    const x = center - 5.5;
+    assert.equal(frame.cells[0]!.lightness, 6 + 4 * Math.sin(0.37 * x + 1.3) * Math.sin(0.29 * x + 0.7));
+    assert.equal(observe({ ...ep.world, bodyGain: undefined }, center, center, 6).cells[0]!.lightness, 6);
+  }
 });
 
-test("gain replay uses consecutive bindings, executed focus and the previous forecast", () => {
-  const models = referenceModel("ideal");
-  const track = createEpisode("continuity", 3101, "first-order", models).agent.tracks[0]!;
-  const prior = { ...track, vx: 1, vy: -2 };
-  const now = { ...prior, x: prior.x + 4, y: prior.y + 2 };
-  const gap = { ...now, boundBlob: null };
-  for (const selection of ["attention", "error", "uniform"] as const) {
-    const learner = new GainLearner(models, 0.03, selection, 801);
-    learner.observe([gap], [now], [3, 0], prior.id, 0.5);
-    learner.observe([prior], [gap], [3, 0], prior.id, 0.5);
-    assert.equal(learner.memory.entries.length, 0);
-    learner.observe([prior], [now], [3, 0], null, 0.5);
-    assert.equal(learner.memory.entries.length, selection === "attention" ? 0 : 1);
-    learner.observe([prior], [now], [3, 0], prior.id, 0.5);
-    const last = learner.memory.entries.at(-1)!;
-    assert.deepEqual(last.value, { shift: [3, 0], error: [3, 4] });
-    if (selection !== "uniform") assert.equal(last.weight, selection === "attention" ? 0.55 : 5.05);
+test("alignment recovers a synthetic translation and has a fixed point at the correct gain", () => {
+  const body: Vector = [1.1, 0.9];
+  const previous = textureFrame([0, 0], body);
+  for (const axis of [0, 1] as const) {
+    const command: Vector = [0, 0];
+    command[axis] = 10;
+    const pair = { previous, current: textureFrame(command, body) };
+    assert.equal(alignScene(pair, [1, 1])[axis], body[axis]);
+    assert.equal(alignScene(pair, body)[axis], 1);
+    assert.equal(alignScene(pair, body)[axis === 0 ? 1 : 0], null);
   }
+});
+
+test("surface cells and all eight neighbors are masked before interpolation", () => {
+  const cells = Array.from({ length: 25 }, () => ({ hue: 0, saturation: 0, lightness: 6 }));
+  cells[12] = { hue: 30, saturation: 70, lightness: 50 };
+  cells[0]!.lightness = 32;
+  const frame = sceneFrame(cells, 5, 5, [0, 0]);
+  assert.deepEqual([...frame.light.keys()].filter((i) => Number.isNaN(frame.light[i])), [6, 7, 8, 11, 12, 13, 16, 17, 18]);
+  assert.equal(frame.light[0], 32);
+});
+
+test("uninformative draws do not update either gain or request an oracle label", () => {
+  const learner = new GainLearner(referenceModel("ideal"), 0.1, "uniform", 801);
+  for (const grid of [4, 32]) {
+    const previous = textureFrame([0, 0], [1, 1], grid), current = textureFrame([1, 1], [1, 1], grid);
+    if (grid === 32) { previous.light.fill(6); current.light.fill(6); }
+    const pair = { previous, current };
+    const ratios = alignScene(pair, [1, 1]);
+    assert.deepEqual(ratios, [null, null]);
+    learner.observe(pair, "pursue", false, 0, ratios);
+    assert.equal(learner.update(() => assert.fail("uninformative label")), false);
+  }
+  assert.deepEqual(learner.models.gain, [1, 1]);
+});
+
+test("attention admits gaze switches and error priorities use informative ratios at insertion", () => {
+  const models = referenceModel("ideal");
+  const previous = textureFrame([0, 0], [1.1, 0.9]), current = textureFrame([10, 0], [1.1, 0.9]);
+  const pair = { previous, current };
+  const ratios = alignScene(pair, models.gain);
+  for (const selection of ["attention", "error", "uniform"] as const) {
+    const learner = new GainLearner(models, 0.1, selection, 801);
+    learner.observe(pair, "pursue", false, 0.5, ratios);
+    assert.equal(learner.memory.entries.length, selection === "attention" ? 0 : 1);
+    learner.observe(pair, "pursue", true, 0.5, ratios);
+    learner.observe(pair, "explore", false, 0.5, ratios);
+    const entries = learner.memory.entries;
+    assert.equal(entries.length, selection === "attention" ? 2 : 3);
+    if (selection !== "uniform") assert.ok(Math.abs(entries[0]!.weight - (selection === "attention" ? 0.55 : 0.15)) < 1e-12);
+  }
+});
+
+test("replay realigns the stored commands at the current estimate and only updates informative axes", () => {
+  const models = referenceModel("ideal"), body: Vector = [1.1, 0.9];
+  const learner = new GainLearner(models, 0.1, "uniform", 801);
+  const pair = { previous: textureFrame([0, 0], body), current: textureFrame([10, 0], body) };
+  learner.observe(pair, "explore", false, 0, alignScene(pair, models.gain));
+  models.gain[0] = 1.1;
+  assert.ok(learner.update());
+  assert.deepEqual(models.gain, [1.1, 1]);
+  const ratios: AxisRatios = [100, null];
+  fitGain(models.gain, ratios, 1);
+  assert.deepEqual(models.gain, [2, 1]);
+  fitGain(models.gain, [0.01, null], 1);
+  assert.deepEqual(models.gain, [0.5, 1]);
 });
 
 test("only oracle updates request a label and gain training preserves the first-stage models", () => {
@@ -78,11 +135,11 @@ test("only oracle updates request a label and gain training preserves the first-
     const learner = new GainLearner(models, 0.03, conditions[id].selection, 801);
     const ep = createEpisode("continuity", 3101, conditions[id].gaze, models, body);
     let calls = 0;
-    trainGainEpisode(learner, ep, id, (shift, estimate) => {
+    trainGainEpisode(learner, ep, id, (estimate) => {
       calls++;
-      return oracleGainLabel(body, shift, estimate);
+      return oracleGainLabel(body, estimate);
     });
-    assert.equal(calls, id === "oracle" ? 80 : 0);
+    assert.equal(calls > 0, id === "oracle");
     assert.deepEqual(models.weights, weights);
     assert.deepEqual(models.logits, logits);
   }
@@ -102,9 +159,9 @@ import { calibrationError, calibrationPoint, gainArea, gainTrial, type GainRuns 
 
 test("the sensorimotor design, oracle rate and reserved seeds are frozen", () => {
   assert.deepEqual(sensorimotorTask, {
-    bodyMinOffset: 0.1, bodyMaxOffset: 0.2, minGazeShift: 0, minGain: 0.5, maxGain: 2, memory: 256,
+    bodyMinOffset: 0.1, bodyMaxOffset: 0.2, minGain: 0.5, maxGain: 2, memory: 256,
     metric: { baselineGain: [1, 1], firstScoredIndex: 1 }, saccadeDistance: 4,
-    checkpoints: [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120], rates: [0.003, 0.01, 0.03, 0.1], evaluationCount: 20,
+    checkpoints: [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120], rates: [0.01, 0.03, 0.1, 0.3], evaluationCount: 20,
     design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
     tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
     comparison: { firstRun: 91, runs: 30, firstEvalSeed: 1061 }, oracleTieTolerance: 0.005, oracleRate: 0.01,
@@ -165,11 +222,17 @@ test("calibration checkpoints capture completed environment steps across episode
   let steps = 0;
   for (const [index, scenario] of (["continuity", "vanish"] as const).entries()) {
     const ep = createEpisode(scenario, 10000 + 100 * 801 + index + 1, cfg.ablation, models, body);
+    const capture = () => {
+      const agent = ep.agent, gaze = agent.obsGaze;
+      return sceneFrame(agent.cells, agent.grid, gaze.aperture, [gaze.x / models.gain[0], gaze.y / models.gain[1]]);
+    };
+    let previous = capture();
     for (let local = 0; local < 80; local++) {
-      const agent = ep.agent, before = agent.tracks, gaze = agent.obsGaze;
       stepEpisode(ep, cfg);
-      learner.observe(before, agent.tracks, [agent.obsGaze.x - gaze.x, agent.obsGaze.y - gaze.y], null, 0);
-      learner.update((shift, estimate) => oracleGainLabel(body, shift, estimate));
+      const current = capture(), pair = { previous, current };
+      learner.observe(pair, "pursue", false, 0, alignScene(pair, models.gain));
+      learner.update((estimate) => oracleGainLabel(body, estimate));
+      previous = current;
       steps++;
       const point = curve.find((p) => p.step === steps);
       if (point) assert.deepEqual([point.gainX, point.gainY], models.gain);

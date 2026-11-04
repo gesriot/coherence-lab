@@ -1,10 +1,16 @@
 import { hashUnit } from "./math.ts";
 import type { Vector } from "./learning.ts";
 
+export const sceneSignal = {
+  texture: { base: 6, amplitude: 4, xFrequency: 0.37, xPhase: 1.3, yFrequency: 0.29, yPhase: 0.7 },
+  ratios: [0.8, 0.85, 0.9, 0.95, 0.98, 0.99, 1, 1.01, 1.02, 1.05, 1.1, 1.15, 1.2],
+  minCells: 20,
+  minToMean: 0.5,
+} as const;
+
 export const sensorimotorTask = {
   bodyMinOffset: 0.1,
   bodyMaxOffset: 0.2,
-  minGazeShift: 0,
   minGain: 0.5,
   maxGain: 2,
   memory: 256,
@@ -12,7 +18,7 @@ export const sensorimotorTask = {
   metric: { baselineGain: [1, 1], firstScoredIndex: 1 },
   saccadeDistance: 4,
   checkpoints: [0, 10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120],
-  rates: [0.003, 0.01, 0.03, 0.1],
+  rates: [0.01, 0.03, 0.1, 0.3],
   evaluationCount: 20,
   design: { firstRun: 801, runs: 10, firstEvalSeed: 3101 },
   tuning: { firstRun: 531, runs: 10, firstEvalSeed: 2061 },
@@ -33,6 +39,6 @@ export function bodyForRun(seed: number): Vector {
 }
 
 // Only the experiment driver supplies this label to oracle training.
-export function oracleGainLabel(body: Readonly<Vector>, shift: Vector, estimate: Vector): Vector {
-  return [(1 - body[0] / estimate[0]) * shift[0], (1 - body[1] / estimate[1]) * shift[1]];
+export function oracleGainLabel(body: Readonly<Vector>, estimate: Vector): Vector {
+  return [body[0] / estimate[0], body[1] / estimate[1]];
 }

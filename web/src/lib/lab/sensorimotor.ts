@@ -41,7 +41,7 @@ export function gainTrial(id: GainCondition, seed: number, firstEvalSeed: number
     const scenario = genesisTask.curriculum[(episode - 1) % genesisTask.curriculum.length]!;
     const ep = createEpisode(scenario, 10000 + 100 * seed + episode, policy.gaze, models, body);
     if (scenario === "nursery") scheduleOutdoorLosses(ep.world);
-    trainGainEpisode(learner, ep, condition, (shift, estimate) => oracleGainLabel(body, shift, estimate), (shift) => {
+    trainGainEpisode(learner, ep, condition, (estimate) => oracleGainLabel(body, estimate), (shift) => {
       step++;
       if (Math.hypot(...shift) > sensorimotorTask.saccadeDistance) saccades++;
       if (step === checkpoints[curve.length]) curve.push(calibrationPoint(step, models.gain, body, initialError));

@@ -4,27 +4,22 @@ import { genesisTask } from "./genesis-task.ts";
 import { conditions, type Condition } from "./genesis-training.ts";
 import type { Models, Vector } from "./learning.ts";
 import { clamp } from "./math.ts";
+import { alignScene, sceneFrame, type AxisRatios, type FramePair } from "./scene-alignment.ts";
 import { sensorimotorTask } from "./sensorimotor-task.ts";
-import type { Track } from "./types.ts";
+import type { AttentionReason } from "./types.ts";
 
-export interface GainExample {
-  shift: Vector;
-  error: Vector;
-}
-
-export type GainLabel = (shift: Vector, estimate: Vector) => Vector;
+export type GainLabel = (estimate: Vector) => Vector;
 export type TrainingCondition = Exclude<Condition, "frozen">;
 
-export function fitGain(estimate: Vector, shift: Vector, error: Vector, rate: number): void {
+export function fitGain(estimate: Vector, ratios: AxisRatios, rate: number): void {
   for (const a of [0, 1] as const) {
-    const delta = shift[a];
-    estimate[a] = clamp(estimate[a] * (1 - rate * error[a] * delta / (1 + delta * delta)),
-      sensorimotorTask.minGain, sensorimotorTask.maxGain);
+    const r = ratios[a];
+    if (r != null) estimate[a] = clamp(estimate[a] * (1 + rate * (r - 1)), sensorimotorTask.minGain, sensorimotorTask.maxGain);
   }
 }
 
 export class GainLearner {
-  readonly memory = new Replay<GainExample>(sensorimotorTask.memory);
+  readonly memory = new Replay<FramePair>(sensorimotorTask.memory);
   readonly models: Models;
   private readonly rate: number;
   private readonly selection: Selection;
@@ -37,39 +32,50 @@ export class GainLearner {
     this.random = generator(seed);
   }
 
-  observe(before: Track[], after: Track[], shift: Vector, focus: number | null, selfError: number): void {
-    if (Math.hypot(...shift) < sensorimotorTask.minGazeShift) return;
-    for (const track of after) {
-      if (track.boundBlob == null || (this.selection === "attention" && track.id !== focus)) continue;
-      const prior = before.find((t) => t.id === track.id);
-      if (prior?.boundBlob == null) continue;
-      const error: Vector = [track.x - prior.x - prior.vx, track.y - prior.y - prior.vy];
-      const priority = this.selection === "error" ? Math.hypot(...error) : selfError;
-      this.memory.add({ shift, error }, 0.05 + priority);
-    }
+  observe(pair: FramePair, reason: AttentionReason, focusChanged: boolean, selfError: number, ratios: AxisRatios): void {
+    if (this.selection === "attention" && reason === "pursue" && !focusChanged) return;
+    const priority = this.selection === "error"
+      ? Math.abs((ratios[0] ?? 1) - 1) + Math.abs((ratios[1] ?? 1) - 1) : selfError;
+    this.memory.add(pair, 0.05 + priority);
   }
 
-  update(label?: GainLabel): void {
-    const sample = this.memory.sample(this.random, this.selection === "uniform");
-    if (!sample) return;
-    const error = label ? label(sample.shift, this.models.gain) : sample.error;
-    fitGain(this.models.gain, sample.shift, error, this.rate);
+  update(label?: GainLabel): boolean {
+    const pair = this.memory.sample(this.random, this.selection === "uniform");
+    if (!pair) return false;
+    const ratios = alignScene(pair, this.models.gain);
+    if (ratios[0] == null && ratios[1] == null) return false;
+    if (label) {
+      const exact = label(this.models.gain);
+      for (const a of [0, 1] as const) if (ratios[a] != null) ratios[a] = exact[a];
+    }
+    fitGain(this.models.gain, ratios, this.rate);
+    return true;
   }
 }
 
 export function trainGainEpisode(
-  learner: GainLearner | null, ep: Episode, condition: Condition, oracleLabel: GainLabel,
-  afterStep?: (shift: Vector) => void,
+  learner: GainLearner | null, ep: Episode, condition: Condition | "neutral", oracleLabel: GainLabel,
+  afterStep?: (shift: Vector, observed: AxisRatios, informativeDraw: boolean) => void,
 ): void {
-  const cfg = { ...defaultConfig(), ablation: conditions[condition].gaze };
+  const cfg = { ...defaultConfig(), ablation: condition === "neutral" ? "no-schema" as const : conditions[condition].gaze };
+  const agent = ep.agent;
+  const capture = () => {
+    const { x, y, aperture } = agent.obsGaze;
+    const gain = agent.learning!.gain;
+    return sceneFrame(agent.cells, agent.grid, aperture, [x / gain[0], y / gain[1]]);
+  };
+  let previous = capture(), previousFocus: number | null = null;
   for (let step = 1; step <= genesisTask.trainingSteps; step++) {
-    const agent = ep.agent;
-    const before = agent.tracks, previous = agent.obsGaze;
-    const focus = agent.attention.executedFocusId;
+    const gaze = agent.obsGaze;
+    const { executedFocusId, executedReason } = agent.attention;
     stepEpisode(ep, cfg);
-    const shift: Vector = [agent.obsGaze.x - previous.x, agent.obsGaze.y - previous.y];
-    learner?.observe(before, agent.tracks, shift, focus, agent.selfError ?? 0);
-    learner?.update(condition === "oracle" ? oracleLabel : undefined);
-    afterStep?.(shift);
+    const current = capture();
+    const pair = { previous, current };
+    const ratios = alignScene(pair, agent.learning!.gain);
+    learner?.observe(pair, executedReason, executedFocusId !== previousFocus, agent.selfError ?? 0, ratios);
+    const informativeDraw = learner?.update(condition === "oracle" ? oracleLabel : undefined) ?? false;
+    afterStep?.([agent.obsGaze.x - gaze.x, agent.obsGaze.y - gaze.y], ratios, informativeDraw);
+    previous = current;
+    previousFocus = executedFocusId;
   }
 }
