@@ -73,3 +73,8 @@ mod persistence;
 mod probes;
 mod report;
 pub use persistence::{PersistenceSettings, b0, b1};
+
+mod motion;
+mod tracking;
+pub use motion::{MotionExperiment, motion_experiment};
+pub use tracking::{TrackingSettings, b1b};

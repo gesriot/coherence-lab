@@ -119,6 +119,17 @@ fn main() -> Result<()> {
         "bench" if args.is_empty() => {
             format!("{}\n", render(run_bench()).context("render benchmark")?)
         }
+        "substrate-b1b" => {
+            substrate::b1b(Default::default(), |m| eprintln!("{m}")).context("run B1b")?
+        }
+        "substrate-b3" | "substrate-b3b" => substrate::motion_experiment(
+            substrate::MotionExperiment {
+                random_path: command == "substrate-b3b",
+                ..Default::default()
+            },
+            |m| eprintln!("{m}"),
+        )
+        .context("run motion experiment")?,
         "substrate-b0" => {
             substrate::b0(Default::default(), |m| eprintln!("{m}")).context("run B0")?
         }

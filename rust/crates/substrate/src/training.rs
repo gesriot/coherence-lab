@@ -113,6 +113,39 @@ mod tests {
     use lab::{Occlusion, Scenario};
     use sha2::{Digest, Sha256};
     #[test]
+    fn command_features_and_adam_use_the_outgoing_command() -> Result<(), Error> {
+        let make = || Element::new(19, 2, 2, true, Kind::Memory, true);
+        let mut m = make();
+        let mut reference = make();
+        let x: Vec<_> = (0..12).map(|i| f64::from(i) / 20.).collect();
+        let next: Vec<_> = x.iter().map(|v| v + 0.1).collect();
+        let obs = [
+            Observation {
+                x: x.clone(),
+                copy: Some([1., -1.]),
+            },
+            Observation {
+                x: next.clone(),
+                copy: Some([-1., 0.]),
+            },
+        ];
+        Trainer::new(&m, 30).episode(&mut m, obs.into_iter(), None, None, None)?;
+        let mut out = reference.buffers();
+        reference.forward(&reference.blank(), &x, &mut out, Some([1., -1.]))?;
+        for (i, f) in out.features.chunks_exact(reference.f).enumerate() {
+            assert_eq!(
+                &f[reference.f - 5..],
+                &[1., -1., x[3 * i], x[3 * i + 1], x[3 * i + 2]]
+            );
+        }
+        let mut grad = Gradient::new(&reference);
+        grad.backward(&reference, &[out], &[next], &[], &[]);
+        let mut adam = Trainer::new(&reference, 30).adam;
+        adam.update(&mut reference.weights, &grad.grad);
+        assert_eq!(m.weights, reference.weights);
+        Ok(())
+    }
+    #[test]
     fn feature_and_parameter_reference_bytes() -> Result<(), Error> {
         let m = Element::new(29, 16, 4, true, Kind::Memory, false);
         let mut state = m.blank();

@@ -20,6 +20,9 @@ pub(crate) struct Predictor<'a> {
     out: Step,
 }
 impl<'a> Predictor<'a> {
+    pub(crate) fn prediction(&self) -> &[f64] {
+        &self.out.prediction
+    }
     pub(crate) fn new(m: &'a Element) -> Self {
         Self {
             m,
