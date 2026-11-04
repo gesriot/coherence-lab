@@ -119,6 +119,12 @@ fn main() -> Result<()> {
         "bench" if args.is_empty() => {
             format!("{}\n", render(run_bench()).context("render benchmark")?)
         }
+        "substrate-b0" => {
+            substrate::b0(Default::default(), |m| eprintln!("{m}")).context("run B0")?
+        }
+        "substrate-b1" => {
+            substrate::b1(Default::default(), |m| eprintln!("{m}")).context("run B1")?
+        }
         "genesis-feasibility" => genesis::design(&args)?,
         "genesis-tune" => genesis::tune()?,
         "genesis" => genesis::comparison()?,

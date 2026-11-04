@@ -55,6 +55,7 @@ dependencies = [
  "anyhow",
  "jscompat",
  "lab",
+ "substrate",
 ]
 
 [[package]]

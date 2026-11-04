@@ -152,7 +152,7 @@ pub struct Wall {
 pub struct Object {
     pub(crate) id: &'static str,
     pub(crate) shape: Shape,
-    pub(crate) hue: f64,
+    pub hue: f64,
     pub x: f64,
     pub y: f64,
     pub vx: f64,

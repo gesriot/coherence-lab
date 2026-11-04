@@ -209,3 +209,28 @@ impl Element {
         Ok(())
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn sobel_impulse_is_antisymmetric_and_mean_excludes_self_and_padding() -> Result<(), Error> {
+        let m = Element::new(1, 3, 1, true, Kind::Plain, false);
+        let mut prev = m.blank();
+        let mut out = m.buffers();
+        let (mut sx, mut sy) = (vec![], vec![]);
+        for i in 0..9 {
+            prev.fill(0.);
+            prev[i] = 1.;
+            m.forward(&prev, &[0.; 27], &mut out, None)?;
+            sx.push(out.features[4 * m.f + 2] * 8.);
+            sy.push(out.features[4 * m.f + 3] * 8.);
+            assert_eq!(
+                out.features[1],
+                if [1, 3, 4].contains(&i) { 1. / 3. } else { 0. }
+            );
+        }
+        assert_eq!(sx, [-1., 0., 1., -2., 0., 2., -1., 0., 1.]);
+        assert_eq!(sy, [-1., -2., -1., 0., 0., 0., 1., 2., 1.]);
+        Ok(())
+    }
+}

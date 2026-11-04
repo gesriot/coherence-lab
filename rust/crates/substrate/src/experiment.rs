@@ -26,6 +26,38 @@ impl Default for TrainingOptions {
         }
     }
 }
+struct ExitWeights {
+    world: lab::World,
+    detector: Detector,
+    grid: usize,
+}
+impl ExitWeights {
+    fn new(sc: Scenario, seed: u32, settings: WorldSettings, grid: usize) -> Self {
+        let world = world(sc, seed, settings);
+        let mut detector = Detector::default();
+        detector.read(&world, grid);
+        Self {
+            world,
+            detector,
+            grid,
+        }
+    }
+    fn at(&mut self, time: usize) -> Vec<f64> {
+        advance(&mut self.world);
+        debug_assert_eq!(self.world.t as usize, time);
+        let mut weights = vec![1.; self.grid * self.grid];
+        if let Some(e) = self.detector.read(&self.world, self.grid).0 {
+            debug_assert_eq!(e.time, time);
+            debug_assert!(e.length > 0);
+            if e.wall {
+                for i in e.cells {
+                    weights[i] = 50.;
+                }
+            }
+        }
+        weights
+    }
+}
 pub struct TrainingTrace {
     pub weights: Vec<f64>,
     pub predictions: Vec<Vec<f64>>,
@@ -68,29 +100,14 @@ pub(crate) fn train(
             }
             occupancy(w, grid)
         };
-        let mut weights = opt.weighted.then(|| {
-            let w = world(sc, seed, opt.world);
-            let mut d = Detector::default();
-            d.read(&w, grid);
-            (w, d)
-        });
+        let mut weights = opt
+            .weighted
+            .then(|| ExitWeights::new(sc, seed, opt.world, grid));
         let mut weight = |time| {
-            let (w, det) = weights
+            weights
                 .as_mut()
-                .expect("only exit weighting requests target maps");
-            advance(w);
-            debug_assert_eq!(w.t as usize, time);
-            let mut v = vec![1.; grid * grid];
-            if let Some(e) = det.read(w, grid).0 {
-                debug_assert_eq!(e.time, time);
-                debug_assert!(e.length > 0);
-                if e.wall {
-                    for i in e.cells {
-                        v[i] = 50.;
-                    }
-                }
-            }
-            v
+                .expect("only exit weighting requests maps")
+                .at(time)
         };
         let mut predictions = vec![];
         coach.episode(
@@ -127,4 +144,54 @@ pub fn training_trace(
     let mut traces = vec![];
     train(&mut m, scale, run, opt, |_, _| Ok(()), Some(&mut traces))?;
     Ok(traces)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_exposed_target_cells_receive_wall_exit_weight() {
+        let setting = WorldSettings {
+            random: true,
+            columns: Some(2),
+        };
+        let mut weights = ExitWeights::new(Scenario::Continuity, 72, setting, 16);
+        let mut w = world(Scenario::Continuity, 72, setting);
+        let mut det = Detector::default();
+        det.read(&w, 16);
+        let mut hits = 0;
+        for time in 1..=72 {
+            advance(&mut w);
+            let event = det.read(&w, 16).0;
+            for (i, weight) in weights.at(time).into_iter().enumerate() {
+                let exposed = event
+                    .as_ref()
+                    .is_some_and(|e| e.wall && e.cells.contains(&i));
+                assert_eq!(weight, if exposed { 50. } else { 1. });
+                hits += usize::from(exposed);
+            }
+        }
+        assert!(hits > 0);
+    }
+    #[test]
+    fn partial_segments_repeat_only_for_equal_seeds() -> Result<(), Error> {
+        let scale = Scale {
+            episodes: 3,
+            depth: 2,
+            steps: 32,
+            ..Scale::default()
+        };
+        let run = |s| {
+            Ok::<_, Error>(
+                training_trace(scale, s, TrainingOptions::default())?
+                    .pop()
+                    .expect("three episodes")
+                    .weights,
+            )
+        };
+        let a = run(1)?;
+        assert_eq!(a, run(1)?);
+        assert_ne!(a, run(2)?);
+        assert_ne!(a, Element::new(1, 16, 2, true, Kind::Plain, false).weights);
+        Ok(())
+    }
 }

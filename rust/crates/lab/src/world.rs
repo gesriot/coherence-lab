@@ -10,7 +10,7 @@ pub struct World {
     pub(crate) seed: u32,
     pub t: u32,
     pub(crate) light: f64,
-    pub(crate) noise: f64,
+    pub noise: f64,
     pub(crate) base_noise: f64,
     swap_at: Option<u32>,
     pub(crate) swapped: bool,

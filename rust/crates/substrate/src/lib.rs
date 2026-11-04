@@ -67,3 +67,9 @@ impl Scale {
 pub use element::Kind;
 pub use experiment::{TrainingOptions, TrainingTrace, training_trace};
 pub use input::{CopyMode, Gain, Motion, WorldSettings};
+
+mod evaluation;
+mod persistence;
+mod probes;
+mod report;
+pub use persistence::{PersistenceSettings, b0, b1};

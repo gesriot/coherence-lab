@@ -269,6 +269,65 @@ mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
     #[test]
+    fn fixed_channels_encode_light_wall_and_circular_object_color() {
+        let mut w = make_world(Scenario::Continuity, 23);
+        w.objects[0].x = 2.5 * 6.25;
+        w.objects[0].y = 8.5 * 6.25;
+        let x = frame(&w, 16, Occlusion::WholeObject, None);
+        assert_eq!(x[..3], [0.06, 0., 0.]);
+        assert_eq!(x[21..24], [0.54, 0., 0.]);
+        let j = 3 * (8 * 16 + 2);
+        assert_eq!(x[j], 0.5);
+        assert!(jscompat::abs(jscompat::hypot(x[j + 1], x[j + 2]) - 0.7) < 1e-14);
+        assert!(
+            jscompat::abs(jscompat::atan2(x[j + 2], x[j + 1]) * 180. / PI - w.objects[0].hue)
+                <= w.noise
+        );
+        w.objects[0].hue += 90.;
+        let y = frame(&w, 16, Occlusion::WholeObject, None);
+        assert!(
+            jscompat::abs(y[j + 1] + x[j + 2]) < 1e-14
+                && jscompat::abs(y[j + 2] - x[j + 1]) < 1e-14
+        );
+    }
+    #[test]
+    fn exit_mask_uses_first_partially_exposed_frame_and_grid_gaps() {
+        let mut w = make_world(Scenario::Continuity, 17);
+        w.objects[0].r = 6.;
+        w.objects[0].y = 8.5 * 6.25;
+        let mut d = Detector::default();
+        for (t, x) in [33., 44., 47., 50., 53., 56., 60., 65.]
+            .into_iter()
+            .enumerate()
+        {
+            w.objects[0].x = x;
+            let event = d.read(&w, 16).0;
+            assert_eq!(
+                d.age,
+                if (1..=5).contains(&t) {
+                    t as i32 - 1
+                } else {
+                    -1
+                }
+            );
+            assert_eq!(
+                event.map(|e| e.cells),
+                if t == 6 { Some(vec![138]) } else { None }
+            );
+        }
+        w.objects[0].vanish_at = Some(0);
+        d.age = 5;
+        assert!(d.read(&w, 16).0.is_none());
+        let mut w = make_world(Scenario::Continuity, 19);
+        w.objects[0].x = 12.5;
+        w.objects[0].y = 12.5;
+        w.objects[0].r = 4.;
+        d.read(&w, 16);
+        assert_eq!(d.age, 0);
+        w.objects[0].x += 3.125;
+        assert!(!d.read(&w, 16).0.expect("grid gap closes").wall);
+    }
+    #[test]
     fn stationary_sensor_and_partial_occlusion() {
         let mut h = Sha256::new();
         for o in movie(

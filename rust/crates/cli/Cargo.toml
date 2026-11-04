@@ -8,3 +8,4 @@ publish.workspace = true
 anyhow.workspace = true
 jscompat.workspace = true
 lab = { path = "../lab" }
+substrate = { path = "../substrate" }
