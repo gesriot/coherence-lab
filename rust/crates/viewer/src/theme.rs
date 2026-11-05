@@ -11,30 +11,32 @@ pub(crate) const LINE: Color32 = Color32::from_rgb(49, 64, 56);
 pub(crate) const ACCENT: Color32 = Color32::from_rgb(224, 161, 90);
 pub(crate) const ACCENT_INK: Color32 = Color32::from_rgb(36, 24, 12);
 
+// Each face covers Cyrillic, so a line never mixes an embedded face with an egui fallback.
+pub(crate) const FONTS: [(&str, &[u8]); 3] = [
+    (
+        "IBM Plex Sans",
+        include_bytes!("../fonts/IBMPlexSans-Regular.ttf"),
+    ),
+    (
+        "IBM Plex Serif",
+        include_bytes!("../fonts/IBMPlexSerif-Regular.ttf"),
+    ),
+    (
+        "IBM Plex Mono",
+        include_bytes!("../fonts/IBMPlexMono-Regular.ttf"),
+    ),
+];
 pub(crate) fn display(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("display".into()))
 }
 pub(crate) fn setup(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
-    for (name, data) in [
-        (
-            "Outfit",
-            include_bytes!("../fonts/Outfit-Regular.ttf").as_slice(),
-        ),
-        (
-            "Newsreader",
-            include_bytes!("../fonts/Newsreader-Regular.ttf").as_slice(),
-        ),
-        (
-            "IBM Plex Mono",
-            include_bytes!("../fonts/IBMPlexMono-Regular.ttf").as_slice(),
-        ),
-    ] {
+    for (name, data) in FONTS {
         fonts
             .font_data
             .insert(name.into(), FontData::from_static(data).into());
     }
-    let mut heading = vec!["Newsreader".into()];
+    let mut heading = vec!["IBM Plex Serif".into()];
     heading.extend(fonts.families[&FontFamily::Proportional].clone());
     fonts
         .families
@@ -43,7 +45,7 @@ pub(crate) fn setup(ctx: &egui::Context) {
         .families
         .entry(FontFamily::Proportional)
         .or_default()
-        .insert(0, "Outfit".into());
+        .insert(0, "IBM Plex Sans".into());
     fonts
         .families
         .entry(FontFamily::Monospace)
@@ -99,7 +101,8 @@ pub(crate) fn card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
         .inner_margin(16)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            body(ui);
+            // Cards often sit in justified columns; keep wrapped text ragged as on the web.
+            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), body);
         });
 }
 pub(crate) fn heading(ui: &mut Ui, text: &str) {

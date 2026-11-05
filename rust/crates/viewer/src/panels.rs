@@ -111,7 +111,7 @@ pub(crate) fn attention(ui: &mut Ui, v: &Snapshot<'_>) {
             );
         }
         ui.add_space(8.);
-        small(ui, "Измерение, не сцена");
+        small(ui, "Измерение, не сцена".to_uppercase());
         let (r, response) = ui.allocate_exact_size(egui::vec2(144., 144.), Sense::hover());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Image, true, "Сырые клетки сенсорного окна")
@@ -278,7 +278,7 @@ pub(crate) fn episode(ui: &mut Ui, s: &State, seed_input: &mut String, actions: 
             .corner_radius(8)
             .inner_margin(12)
             .show(ui, |ui| {
-                small(ui, "Только оценщик");
+                small(ui, "Только оценщик".to_uppercase());
                 let retained = match e.retained {
                     None => "ещё рано",
                     Some(true) => "удержана",
@@ -416,7 +416,7 @@ pub(crate) fn protocol(ui: &mut Ui, s: &State) {
                         {
                             ui.vertical(|ui| {
                                 ui.set_width(widths[i]);
-                                small(ui, *text);
+                                small(ui, text.to_uppercase());
                             });
                         }
                         ui.end_row();

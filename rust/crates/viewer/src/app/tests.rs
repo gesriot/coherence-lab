@@ -125,21 +125,32 @@ fn pending_and_failed_protocol_use_reference_labels() {
     );
 }
 #[test]
-fn embedded_fonts_cover_cyrillic_and_protocol_symbols() {
-    let mut h = harness(480.);
-    h.run();
-    h.ctx.fonts_mut(|fonts| {
-        for font in [
-            FontId::proportional(14.),
-            FontId::monospace(12.),
-            display(24.),
-        ] {
-            assert!(fonts.has_glyphs(
-                &font,
-                "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя–·°≥…×"
-            ));
-        }
-    });
+fn each_embedded_face_alone_covers_cyrillic_and_protocol_symbols() {
+    for (name, data) in crate::theme::FONTS {
+        // Load the face without egui fallbacks, so a missing glyph cannot be borrowed.
+        let ctx = egui::Context::default();
+        let mut fonts = egui::FontDefinitions::empty();
+        fonts
+            .font_data
+            .insert(name.into(), egui::FontData::from_static(data).into());
+        fonts
+            .families
+            .insert(egui::FontFamily::Proportional, vec![name.into()]);
+        ctx.set_fonts(fonts);
+        // No renderer consumes the font atlas upload here.
+        ctx.run_ui(egui::RawInput::default(), |_| {})
+            .textures_delta
+            .clear();
+        ctx.fonts_mut(|fonts| {
+            assert!(
+                fonts.has_glyphs(
+                    &FontId::proportional(14.),
+                    "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя–·°≥…×"
+                ),
+                "{name}"
+            );
+        });
+    }
 }
 
 static REPORT: LazyLock<lab::BenchReport> = LazyLock::new(lab::run_bench);

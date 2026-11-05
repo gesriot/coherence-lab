@@ -12,6 +12,5 @@ fn main() -> Result<()> {
         options,
         Box::new(|cc| Ok(Box::new(viewer::Viewer::new(&cc.egui_ctx)))),
     )
-    .map_err(|e| anyhow::anyhow!(e.to_string()))
     .context("open laboratory window")
 }

@@ -51,7 +51,7 @@ impl Viewer {
         ui.add_space(20.);
         let header = |ui: &mut Ui| {
             ui.label(
-                RichText::new("Лаборатория, не личность")
+                RichText::new("Лаборатория, не личность".to_uppercase())
                     .monospace()
                     .size(12.)
                     .color(ACCENT),
@@ -81,7 +81,8 @@ impl Viewer {
         };
         if width >= 750. {
             ui.columns(2, |cols| {
-                header(&mut cols[0]);
+                // Columns are justified, and a justified label stretches its wrapped lines.
+                cols[0].with_layout(egui::Layout::top_down(egui::Align::LEFT), header);
                 cols[1].with_layout(egui::Layout::top_down(egui::Align::RIGHT), status);
             });
         } else {
