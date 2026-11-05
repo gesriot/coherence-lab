@@ -9,7 +9,20 @@ fn main() -> Result<()> {
     let mut buf = Vec::new();
     io::stdin().read_to_end(&mut buf).context("read cases")?;
     let mut out = io::BufWriter::new(io::stdout().lock());
-    if mode == "numbers" {
+    if mode == "points" {
+        let (cases, tail) = buf.as_chunks::<8>();
+        if !tail.is_empty() {
+            bail!("truncated points case");
+        }
+        for bytes in cases {
+            writeln!(
+                out,
+                "{}",
+                jscompat::signed_tenth(f64::from_le_bytes(*bytes) * 100.)
+            )
+            .context("write points")?;
+        }
+    } else if mode == "numbers" {
         let (cases, tail) = buf.as_chunks::<9>();
         if !tail.is_empty() {
             bail!("truncated number case");

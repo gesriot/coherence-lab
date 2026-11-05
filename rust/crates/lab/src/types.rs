@@ -64,7 +64,8 @@ impl std::str::FromStr for Policy {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum Shape {
+#[non_exhaustive]
+pub enum Shape {
     Disk,
     Square,
     Triangle,
@@ -72,7 +73,8 @@ pub(crate) enum Shape {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum Source {
+#[non_exhaustive]
+pub enum Source {
     Observed,
     Predicted,
     Remembered,
@@ -81,7 +83,8 @@ pub(crate) enum Source {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum Reason {
+#[non_exhaustive]
+pub enum Reason {
     None,
     Noise,
     Occlusion,
@@ -92,7 +95,8 @@ pub(crate) enum Reason {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum Agreement {
+#[non_exhaustive]
+pub enum Agreement {
     Settled,
     Competing,
     Underdetermined,
@@ -108,7 +112,8 @@ pub(crate) enum Expectation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum Look {
+#[non_exhaustive]
+pub enum Look {
     Verify,
     Conflict,
     Uncertainty,
@@ -121,10 +126,11 @@ pub(crate) enum Look {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy, Default)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Gaze {
-    pub(crate) x: f64,
-    pub(crate) y: f64,
-    pub(crate) aperture: f64,
+#[non_exhaustive]
+pub struct Gaze {
+    pub x: f64,
+    pub y: f64,
+    pub aperture: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy, Default)]
@@ -150,8 +156,8 @@ pub struct Wall {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Object {
-    pub(crate) id: &'static str,
-    pub(crate) shape: Shape,
+    pub id: &'static str,
+    pub shape: Shape,
     pub hue: f64,
     pub x: f64,
     pub y: f64,
@@ -183,20 +189,21 @@ pub(crate) struct MotionSample {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Track {
-    pub(crate) id: u32,
-    pub(crate) x: f64,
-    pub(crate) y: f64,
+#[non_exhaustive]
+pub struct Track {
+    pub id: u32,
+    pub x: f64,
+    pub y: f64,
     pub(crate) vx: f64,
     pub(crate) vy: f64,
-    pub(crate) hue: f64,
+    pub hue: f64,
     pub(crate) fill: f64,
-    pub(crate) evidence: f64,
+    pub evidence: f64,
     pub(crate) prediction: f64,
-    pub(crate) uncertainty: f64,
-    pub(crate) confidence: f64,
-    pub(crate) source: Source,
-    pub(crate) reason: Reason,
+    pub uncertainty: f64,
+    pub confidence: f64,
+    pub source: Source,
+    pub reason: Reason,
     pub(crate) unseen: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) empty_views: Option<u32>,
@@ -206,8 +213,8 @@ pub(crate) struct Track {
     pub(crate) gap_step: Option<GapStep>,
     pub(crate) age: u32,
     pub(crate) bound_blob: Option<usize>,
-    pub(crate) conflict: bool,
-    pub(crate) in_workspace: bool,
+    pub conflict: bool,
+    pub in_workspace: bool,
     pub(crate) radius: f64,
     pub(crate) flow_error: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -218,45 +225,48 @@ pub(crate) struct Track {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Attention {
-    pub(crate) active: bool,
-    pub(crate) influences_action: bool,
-    pub(crate) focus_id: Option<u32>,
-    pub(crate) reason: Look,
-    pub(crate) executed_reason: Look,
-    pub(crate) executed_focus_id: Option<u32>,
-    pub(crate) agreement: Agreement,
-    pub(crate) intended_x: f64,
-    pub(crate) intended_y: f64,
-    pub(crate) intended_aperture: f64,
-    pub(crate) executed_x: f64,
-    pub(crate) executed_y: f64,
-    pub(crate) executed_aperture: f64,
-    pub(crate) note: &'static str,
-    pub(crate) predicted_observed: bool,
-    pub(crate) predicted_drop: f64,
-    pub(crate) self_error: Option<f64>,
+#[non_exhaustive]
+pub struct Attention {
+    pub active: bool,
+    pub influences_action: bool,
+    pub focus_id: Option<u32>,
+    pub reason: Look,
+    pub executed_reason: Look,
+    pub executed_focus_id: Option<u32>,
+    pub agreement: Agreement,
+    pub intended_x: f64,
+    pub intended_y: f64,
+    pub intended_aperture: f64,
+    pub executed_x: f64,
+    pub executed_y: f64,
+    pub executed_aperture: f64,
+    pub note: &'static str,
+    pub predicted_observed: bool,
+    pub predicted_drop: f64,
+    pub self_error: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy, Default)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Energy {
-    pub(crate) sensory: f64,
-    pub(crate) binding: f64,
-    pub(crate) temporal: f64,
-    pub(crate) action: f64,
+#[non_exhaustive]
+pub struct Energy {
+    pub sensory: f64,
+    pub binding: f64,
+    pub temporal: f64,
+    pub action: f64,
     #[serde(rename = "self")]
-    pub(crate) self_error: Option<f64>,
-    pub(crate) regularization: f64,
-    pub(crate) total: f64,
-    pub(crate) overconfident: bool,
+    pub self_error: Option<f64>,
+    pub regularization: f64,
+    pub total: f64,
+    pub overconfident: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct History {
-    pub(crate) step: u32,
-    pub(crate) total: f64,
+#[non_exhaustive]
+pub struct History {
+    pub step: u32,
+    pub total: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Copy)]

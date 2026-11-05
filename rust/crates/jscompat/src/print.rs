@@ -239,6 +239,58 @@ fn quoted_table(s: &str) -> String {
     )
 }
 
+// Intl.NumberFormat rounds the shortest decimal, not the exact binary fraction.
+// Russian grouping uses NBSP and suppresses the sign of a rounded zero.
+pub fn signed_tenth(x: f64) -> String {
+    if x.is_nan() {
+        return "не число".into();
+    }
+    if x.is_infinite() {
+        return if x.is_sign_negative() { "-∞" } else { "+∞" }.into();
+    }
+    let shortest = number(x.abs());
+    let (mantissa, exponent) = shortest
+        .split_once('e')
+        .map_or((shortest.as_str(), 0), |(m, e)| {
+            (
+                m,
+                e.parse::<i32>().expect("number emits a decimal exponent"),
+            )
+        });
+    let decimals = mantissa.split_once('.').map_or(0, |(_, f)| f.len() as i32);
+    let digits = mantissa.replace('.', "");
+    let mut n = num_bigint::BigUint::parse_bytes(digits.as_bytes(), 10)
+        .expect("finite number has decimal digits");
+    let shift = exponent + 1 - decimals;
+    let ten = num_bigint::BigUint::from(10u8);
+    if shift < 0 {
+        let divisor = ten.pow((-shift) as u32);
+        n = (n + &divisor / 2u8) / divisor;
+    } else {
+        n *= ten.pow(shift as u32);
+    }
+    if n == num_bigint::BigUint::from(0u8) {
+        return "0".into();
+    }
+    let mut digits = n.to_str_radix(10);
+    let fraction = digits.pop().expect("nonzero integer has digits");
+    if digits.is_empty() {
+        digits.push('0');
+    }
+    let mut result = String::from(if x < 0. { "-" } else { "+" });
+    for (i, c) in digits.chars().enumerate() {
+        if i != 0 && (digits.len() - i).is_multiple_of(3) {
+            result.push(' ');
+        }
+        result.push(c);
+    }
+    if fraction != '0' {
+        result.push(',');
+        result.push(fraction);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

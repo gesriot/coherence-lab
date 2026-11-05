@@ -9,5 +9,5 @@ mod print;
 mod width_data;
 pub use print::{
     FormatError, Value, console_log, console_table, inspect_number, inspect_string, number,
-    string_width, to_fixed,
+    signed_tenth, string_width, to_fixed,
 };

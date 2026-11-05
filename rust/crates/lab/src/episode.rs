@@ -32,54 +32,56 @@ struct Echo {
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ObjectReport {
-    id: &'static str,
-    body_hue: f64,
-    pub(crate) nearest_track: Option<u32>,
-    track_hue: Option<f64>,
-    dist: Option<f64>,
-    pub(crate) occluded: bool,
-    pub(crate) vanished: bool,
-    visible: bool,
+#[non_exhaustive]
+pub struct ObjectReport {
+    pub id: &'static str,
+    pub body_hue: f64,
+    pub nearest_track: Option<u32>,
+    pub track_hue: Option<f64>,
+    pub dist: Option<f64>,
+    pub occluded: bool,
+    pub vanished: bool,
+    pub visible: bool,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Evaluator {
-    initial_track_id: Option<u32>,
-    pub(crate) retained: Option<bool>,
-    pub(crate) objects: Vec<ObjectReport>,
-    light_true: f64,
-    light_estimated: f64,
+#[non_exhaustive]
+pub struct Evaluator {
+    pub initial_track_id: Option<u32>,
+    pub retained: Option<bool>,
+    pub objects: Vec<ObjectReport>,
+    pub light_true: f64,
+    pub light_estimated: f64,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct Snapshot<'a> {
-    step: u32,
-    scenario: Scenario,
-    seed: u32,
-    ablation: Policy,
-    objects: &'a [Object],
-    occluder: Wall,
-    light: f64,
-    noise: f64,
-    swapped: bool,
-    obs_gaze: Gaze,
-    next_gaze: Gaze,
-    cells: &'a [Cell],
-    grid: usize,
+    pub step: u32,
+    pub scenario: Scenario,
+    pub seed: u32,
+    pub ablation: Policy,
+    pub objects: &'a [Object],
+    pub occluder: Wall,
+    pub light: f64,
+    pub noise: f64,
+    pub swapped: bool,
+    pub obs_gaze: Gaze,
+    pub next_gaze: Gaze,
+    pub cells: &'a [Cell],
+    pub grid: usize,
     blobs: &'a [Blob],
-    tracks: &'a [Track],
-    attention: &'a Attention,
-    energy: Energy,
-    energy_trace: &'a [f64],
-    history: &'a [History],
-    coupling: &'static str,
-    memory_frames: usize,
-    workspace_capacity: usize,
-    iterations_used: usize,
-    iteration_budget: usize,
-    pub(crate) evaluator: Evaluator,
+    pub tracks: &'a [Track],
+    pub attention: &'a Attention,
+    pub energy: Energy,
+    pub energy_trace: &'a [f64],
+    pub history: &'a [History],
+    pub coupling: &'static str,
+    pub memory_frames: usize,
+    pub workspace_capacity: usize,
+    pub iterations_used: usize,
+    pub iteration_budget: usize,
+    pub evaluator: Evaluator,
     config_echo: Echo,
 }
 impl Episode {

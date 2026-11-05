@@ -1,25 +1,13 @@
 mod gain;
 mod genesis;
 use anyhow::{Context, Result, bail};
-use jscompat::{Value, console_log, console_table, to_fixed};
-use lab::{BenchReport, Proportion, ReplayResult, Verdict, run_bench};
+use jscompat::{Value, console_log, console_table};
+use lab::{
+    AGE_ASSUMPTION, BenchReport, ReplayResult, SHARED_DETECTION, causal_label, criterion, decimal,
+    exploration_note, format_rate as rate, run_bench,
+};
 use std::io::{self, Write};
 
-fn decimal(value: f64, digits: u8) -> String {
-    to_fixed(value, digits)
-        .expect("bench fields use at most three fractional digits")
-        .replace('.', ",")
-}
-fn rate(p: Proportion) -> String {
-    format!(
-        "{}/{} · {}% [{}–{}%]",
-        p.k,
-        p.n,
-        decimal(100. * p.rate, 1),
-        decimal(100. * p.low, 1),
-        decimal(100. * p.high, 1)
-    )
-}
 fn replay_description(r: &ReplayResult) -> String {
     let detection = if r.detected {
         "обнаружен"
@@ -38,13 +26,8 @@ fn replay_description(r: &ReplayResult) -> String {
 }
 fn render(report: BenchReport) -> Result<String> {
     let mut lines = vec![
-        format!(
-            "Удержание A проверяется за 72 шага, различение пары – за 200. На {} конфигурациях полный контур должен опередить каждый из трёх контролей («Первый порядок», «Только запись», «Лишняя память») более чем на 20 п. п. хотя бы по одной задаче. Тот же порог применяется отдельно к сравнению с «Новизной» для проверки альтернативного объяснения. Оценщик обнаруживает повтор по ошибке прогноза за шаги 17–40 при AUC ≥ 0,9.",
-            report.configurations
-        ),
-        String::from(
-            "Возраст трека – число шагов с момента рождения гипотезы. В этом эксперименте он считается полем первого порядка.",
-        ),
+        criterion(report.configurations),
+        AGE_ASSUMPTION.into(),
         String::from("Доли успеха и 95%-е интервалы Уилсона"),
     ];
     let rows = report
@@ -77,12 +60,7 @@ fn render(report: BenchReport) -> Result<String> {
         )
         .context("format benchmark table")?,
     );
-    let verdict = match report.causal {
-        Verdict::Supported => "подтверждена на этих конфигурациях",
-        Verdict::Mixed => "смешанный результат",
-        Verdict::Unsupported => "не подтверждена",
-        _ => bail!("unsupported causal verdict"),
-    };
+    let verdict = causal_label(report.causal);
     lines.push(console_log(&[
         "Причинная роль модели второго порядка:".into(),
         verdict.into(),
@@ -98,12 +76,12 @@ fn render(report: BenchReport) -> Result<String> {
     ]));
     lines.extend(report.saturation);
     if report.unequal_exploration {
-        lines.push("Доли шагов обхода у полного контура и первого порядка различаются более чем в полтора раза.".into());
+        lines.push(exploration_note(&report.rows).into());
     }
     lines.push("Обнаружение повтора по собственному прогнозу".into());
     lines.extend(report.replay.iter().map(replay_description));
     if report.replay.iter().all(|r| r.detected) {
-        lines.push("Оценщик обнаружил повтор в обоих условиях. Различение повтора по этой ошибке – свойство прогноза первого порядка.".into());
+        lines.push(SHARED_DETECTION.into());
     }
     Ok(lines.join("\n"))
 }

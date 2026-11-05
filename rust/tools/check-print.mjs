@@ -38,3 +38,18 @@ for(const texts of suites){
   assert.equal(run('inspect',buf),texts.map(s=>inspect(s)+'\n').join(''));
 }
 console.log(`${expected.length} number/toFixed/inspect cases; ${suites.length} tables, log and string inspection match`);
+
+const pointEdges = [-0, 0, -0.00049, 0.00049, -0.0005, 0.0005, -0.05, 0.05, -1.25, 1.25,
+  0.0004999999999999999, 0.0005000000000000001, 1.0005, 100.05, -100.05,
+  1000, 1000000, Number.MIN_VALUE, Number.MAX_VALUE, NaN, Infinity, -Infinity];
+const deltas = [...pointEdges, ...Array.from({length:100000}, (_,i) => {
+  bits.writeUInt32LE(word()); bits.writeUInt32LE(word(),4);
+  return i%2 ? bits.readDoubleLE() : (word()/2**32-0.5)*10000;
+})];
+const inputs = Buffer.alloc(deltas.length*8);
+deltas.forEach((x,i) => inputs.writeDoubleLE(x,i*8));
+const pointActual = run('points',inputs).trimEnd().split('\n');
+assert.equal(pointActual.length,deltas.length);
+deltas.forEach((x,i) => assert.equal(pointActual[i], (x*100).toLocaleString('ru-RU',
+  {maximumFractionDigits:1,signDisplay:'exceptZero'}), `points ${i}: ${x}`));
+console.log(`${deltas.length} points cases match ru-RU rounding, grouping and signs`);

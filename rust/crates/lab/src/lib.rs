@@ -16,7 +16,7 @@ mod types;
 mod world;
 
 pub use bench::{BenchReport, BenchRow, Proportion, ReplayResult, Verdict, run_bench};
-pub use episode::{Episode, Snapshot};
+pub use episode::{Episode, Evaluator, ObjectReport, Snapshot};
 pub use learning::{Context, GapObservation, GapStep, Models, fit_existence, fit_motion};
 pub use types::{Config, LabError, Policy, Scenario};
 
@@ -40,3 +40,10 @@ pub use training::{Condition, PARTICIPANTS};
 pub use sensor::{Occlusion, sample};
 pub use types::{Cell, Object, Wall};
 pub use world::{World, advance, contains, hidden, make_world, schedule_outdoor_losses};
+
+mod protocol;
+pub use protocol::{
+    AGE_ASSUMPTION, SHARED_DETECTION, causal_label, criterion, decimal, exploration_note,
+    format_rate, points,
+};
+pub use types::{Agreement, Attention, Energy, Gaze, History, Look, Reason, Shape, Source, Track};
