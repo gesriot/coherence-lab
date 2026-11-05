@@ -187,6 +187,9 @@ impl State {
     pub fn repaint_after(&self, now: Duration) -> Option<Duration> {
         self.running.then(|| self.next_tick.saturating_sub(now))
     }
+    pub(crate) fn worker_pending(&self) -> bool {
+        self.receiver.is_some()
+    }
     pub fn start_bench(&mut self) {
         self.start_worker(|| Ok(lab::run_bench()));
     }
